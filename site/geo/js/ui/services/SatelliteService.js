@@ -49,14 +49,54 @@ class SatelliteService {
      * @returns {Promise<Object>}
      */
     async searchImages(params) {
-        const { aoi, startDate, endDate, cloudCoverage, satellite } = params;
-
-        if (APP_CONFIG.MODE === 'DEMO' || !this.isConfigured) {
+        if (APP_CONFIG.MODE === 'DEMO') {
             return this._demoSearch(params);
         }
-
-        // Modo REAL - preparado para integração com Copernicus
         return this._realSearch(params);
+    }
+
+    async downloadBands(params) {
+        if (APP_CONFIG.MODE === 'DEMO') {
+            return { downloaded: {}, isDemo: true };
+        }
+        const apiBase = APP_CONFIG.API_BASE || 'http://localhost:8000';
+        try {
+            const response = await fetch(`${apiBase}/api/satellite/download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(`API erro: ${response.status} - ${err}`);
+            }
+            return await response.json();
+        } catch (e) {
+            console.error('[SatelliteService] Erro no download:', e.message);
+            throw e;
+        }
+    }
+
+    async searchAndDownload(params) {
+        if (APP_CONFIG.MODE === 'DEMO') {
+            return this._demoSearch(params);
+        }
+        const apiBase = APP_CONFIG.API_BASE || 'http://localhost:8000';
+        try {
+            const response = await fetch(`${apiBase}/api/satellite/search-and-download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+            if (!response.ok) {
+                const err = await response.text();
+                throw new Error(`API erro: ${response.status} - ${err}`);
+            }
+            return await response.json();
+        } catch (e) {
+            console.error('[SatelliteService] Erro search-and-download:', e.message);
+            throw e;
+        }
     }
 
     /**
@@ -119,9 +159,26 @@ class SatelliteService {
      * @private
      */
     async _realSearch(params) {
-        // Placeholder para integração Copernicus
-        console.warn('[SatelliteService] Modo REAL: integração Copernicus não implementada.');
-        return this._demoSearch(params);
+        const apiBase = APP_CONFIG.API_BASE || 'http://localhost:8000';
+        try {
+            const response = await fetch(`${apiBase}/api/satellite/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+
+            if (!response.ok) {
+                console.warn('[SatelliteService] API retornou erro, usando demo');
+                return this._demoSearch(params);
+            }
+
+            const result = await response.json();
+            result.isDemo = false;
+            return result;
+        } catch (e) {
+            console.warn('[SatelliteService] Falha ao conectar com API:', e.message);
+            return this._demoSearch(params);
+        }
     }
 
     /**

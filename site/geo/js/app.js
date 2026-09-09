@@ -37,21 +37,17 @@ class App {
     init() {
         if (this.isInitialized) return;
         
-        console.log('🚀 Environmental Intelligence Center - Inicializando...');
-        console.log(`📌 Modo: ${APP_CONFIG.MODE}`);
+        console.log('Environmental Intelligence Center - Inicializando...');
+        console.log(`Modo: ${APP_CONFIG.MODE}`);
         
-        // Verifica se Leaflet está carregado
         if (typeof L === 'undefined') {
-            console.error('❌ Leaflet não carregado! Verifique a conexão com a internet.');
-            this._showNotification('⚠️ Erro', 'Leaflet não carregado. Verifique sua conexão com a internet.', 'critical');
+            console.error('Leaflet nao carregado!');
             return;
         }
         
-        // Inicializa storage com dados demo
         this.storage = storageService;
         this.storage.init();
         
-        // Inicializa serviços
         this.areaService = new AreaService();
         this.areaService.init();
         
@@ -70,15 +66,12 @@ class App {
         this.auditService = new AuditService();
         this.auditService.init();
         
-        // NOVO: Inicializa Image Service
         this.imageService = new ImageService();
         this.imageService.init();
         
-        // NOVO: Inicializa Image Comparator
         this.imageComparator = new ImageComparator();
         this.imageComparator.init();
         
-        // Inicializa UI
         this.dashboard = new Dashboard();
         this.dashboard.init();
         
@@ -88,28 +81,22 @@ class App {
         this.alertPanel = new AlertPanel();
         this.alertPanel.init();
         
+        if (window.SatellitePanel) {
+            window.SatellitePanel.init();
+        }
+        
         this.timeline = new Timeline();
         this.timeline.init();
         
-        // Carrega dados
         this._loadData();
-        
-        // Atualiza UI
         this._updateUI();
         
-        // Mostra notificação de boas-vindas
         setTimeout(() => {
             this._showWelcomeNotification();
         }, 500);
         
         this.isInitialized = true;
-        console.log('✅ Sistema inicializado com sucesso!');
-        
-        // Verifica se ImageService tem imagens
-        if (this.imageService) {
-            console.log('📸 ImageService inicializado com imagens para', 
-                Object.keys(this.imageService.images || {}).length, 'áreas');
-        }
+        console.log('Sistema inicializado com sucesso!');
     }
 
     /**
@@ -117,19 +104,15 @@ class App {
      * @private
      */
     _loadData() {
-         const areas = this.storage.getAreas();
+        const areas = this.storage.getAreas();
         const alerts = this.storage.getAlerts();
         const history = this.storage.getHistory();
         
-        console.log(`📊 ${areas.length} áreas carregadas`);
-        console.log(`⚠️ ${alerts.length} alertas carregados`);
-        console.log(`📜 ${history.length} registros de histórico`);
+        console.log(`${areas.length} areas, ${alerts.length} alertas, ${history.length} historico`);
         
-        // Atualiza serviços
         if (this.areaService) this.areaService.setAreas(areas);
         if (this.alertService) this.alertService.setAlerts(alerts);
         
-        // Gera imagens para as áreas
         if (this.imageService) {
             areas.forEach(area => {
                 this.imageService.generateForArea(area);
@@ -839,18 +822,12 @@ class App {
      * @private
      */
     _resetData() {
-        if (!confirm('Deseja resetar todos os dados e carregar novamente os dados de demonstração?')) return;
-        
+        if (!confirm('Deseja resetar todos os dados?')) return;
         this.storage.clearAll();
         this.storage.init();
         this._loadData();
         this._updateUI();
-        
-        this._showNotification(
-            '🔄 Dados resetados',
-            'Dados de demonstração carregados com sucesso.',
-            'success'
-        );
+        this._showNotification('Dados resetados', '', 'success');
     }
 
     /**

@@ -1,0 +1,71 @@
+[
+  {
+    "nome": "Reserva Teste",
+    "descricao": "Area de teste para integracao",
+    "categoria": "reserva",
+    "prioridade": "alta",
+    "status": "ativo",
+    "responsavel": "Operador",
+    "frequency": "semanal",
+    "geojson": {
+      "type": "Feature",
+      "properties": {},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -48.0,
+              -15.8
+            ],
+            [
+              -47.8,
+              -15.8
+            ],
+            [
+              -47.8,
+              -15.6
+            ],
+            [
+              -48.0,
+              -15.6
+            ],
+            [
+              -48.0,
+              -15.8
+            ]
+          ]
+        ]
+      }
+    },
+    "areaHa": 500.0,
+    "perimeterKm": 12.5,
+    "municipality": "Brasilia",
+    "state": "DF",
+    "id": "AREA_25AD5ADF",
+    "createdAt": "2026-09-09T15:30:30.688743",
+    "analysis": {
+      "status": "normal",
+      "type": "normal",
+      "type_label": "Normal",
+      "severity": "normal",
+      "confidence": 0.7504,
+      "affectedAreaHa": 0.0,
+      "affectedPercentage": 0.0,
+      "previousDate": "2026-09-09T15:30:30.859289",
+      "currentDate": "2026-09-09T15:30:30.859289",
+      "indices": {
+        "ndviBefore": 0.538,
+        "ndviAfter": 0.5384,
+        "ndviChange": -0.0004,
+        "nbrBefore": 0,
+        "nbrAfter": 0,
+        "nbrChange": 0
+      },
+      "isDemo": false,
+      "occurances": []
+    },
+    "lastAnalysis": "2026-09-09T15:30:30.859289",
+    "updatedAt": "2026-09-09T15:30:30.859818"
+  }
+]

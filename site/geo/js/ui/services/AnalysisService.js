@@ -131,12 +131,9 @@ class AnalysisService {
      * @private
      */
     _performAnalysis(area, options) {
-        // Se for modo DEMO, usa dados simulados baseados no status da área
         if (APP_CONFIG.MODE === 'DEMO') {
             return this._demoAnalysis(area);
         }
-
-        // Modo REAL - preparado para integração futura
         return this._realAnalysis(area, options);
     }
 
@@ -237,10 +234,26 @@ class AnalysisService {
      * @returns {Object}
      * @private
      */
-    _realAnalysis(area, options) {
-        // Placeholder para integração com Copernicus
-        console.warn('[AnalysisService] Modo REAL não implementado. Usando dados simulados.');
-        return this._demoAnalysis(area);
+    async _realAnalysis(area, options) {
+        const apiBase = APP_CONFIG.API_BASE || 'http://localhost:8000';
+        const response = await fetch(`${apiBase}/api/analysis/${area.id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                limiar: options.limiar || APP_CONFIG.ANALYSIS.NDVI_THRESHOLD || 0.15,
+                area_minima_pixels: options.area_minima_pixels || 20,
+                modo: options.modo || 'bandas'
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            throw new Error(`Erro na API: ${response.status} - ${err}`);
+        }
+
+        const result = await response.json();
+        result.isDemo = false;
+        return result;
     }
 
     /**

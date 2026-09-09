@@ -95,6 +95,10 @@
                     <span class="nav-icon">🔬</span>
                     <span class="nav-label">Análises</span>
                 </li>
+                <li class="nav-item" data-view="satellite">
+                    <span class="nav-icon">🛰️</span>
+                    <span class="nav-label">Satélite</span>
+                </li>
                 <li class="nav-item" data-view="history">
                     <span class="nav-icon">📜</span>
                     <span class="nav-label">Histórico</span>
@@ -237,6 +241,60 @@
                             Selecione uma área e clique em "Analisar Área"
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- VIEW: SATÉLITE -->
+            <section id="view-satellite" class="view">
+                <div class="panel-header">
+                    <h2>🛰️ Imagens Satélite</h2>
+                    <div class="satellite-actions">
+                        <button class="btn-primary" id="searchSatelliteBtn">🔍 Buscar Imagens</button>
+                    </div>
+                </div>
+                
+                <div class="satellite-search-form" id="satelliteSearchForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Área de Interesse</label>
+                            <select id="satelliteAreaSelect">
+                                <option value="">Selecionar área...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Data Início</label>
+                            <input type="date" id="satelliteStartDate">
+                        </div>
+                        <div class="form-group">
+                            <label>Data Fim</label>
+                            <input type="date" id="satelliteEndDate">
+                        </div>
+                        <div class="form-group">
+                            <label>Cobertura de Nuvens (%)</label>
+                            <input type="number" id="satelliteCloudCover" min="0" max="100" value="30">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="satellite-results" id="satelliteResults">
+                    <div class="satellite-placeholder">
+                        Configure os filtros e clique em "Buscar Imagens" para encontrar imagens Sentinel-2
+                    </div>
+                </div>
+
+                <div class="satellite-download-section" id="satelliteDownloadSection" style="display:none;">
+                    <h3>📥 Imagens Selecionadas</h3>
+                    <div class="selected-images">
+                        <div class="selected-image" id="selectedImageAntes">
+                            <span class="image-label">Antes:</span>
+                            <span class="image-info">Nenhuma selecionada</span>
+                        </div>
+                        <div class="selected-image" id="selectedImageDepois">
+                            <span class="image-label">Depois:</span>
+                            <span class="image-info">Nenhuma selecionada</span>
+                        </div>
+                    </div>
+                    <button class="btn-primary" id="downloadAndAnalyzeBtn">⬇️ Baixar e Analisar</button>
                 </div>
             </section>
 
@@ -475,6 +533,7 @@
     <script src="js/ui/AlertPanel.js"></script>
     <script src="js/ui/Timeline.js"></script>
     <script src="js/ui/ImageComparator.js"></script>
+    <script src="js/ui/SatellitePanel.js"></script>
 
     <!-- 4. DADOS -->
     <script src="js/ui/data/demoData.js"></script>

@@ -5,7 +5,10 @@
 
 const APP_CONFIG = {
     // Modo de operação: 'DEMO' ou 'REAL'
-    MODE: 'DEMO',
+    MODE: 'REAL',
+    
+    // URL base da API Python
+    API_BASE: 'http://localhost:8000',
     
     // Versão
     VERSION: '1.0.0',
