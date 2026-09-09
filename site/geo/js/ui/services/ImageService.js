@@ -341,22 +341,44 @@ class ImageService {
 
     /**
      * Atualiza imagens após análise
-     * @param {string} areaId 
-     * @param {Object} analysisResult 
+     * @param {string} areaId
+     * @param {Object} analysisResult
      */
     updateAfterAnalysis(areaId, analysisResult) {
         if (!this.images[areaId]) return;
-        
+
         const area = window.app?.areaService?.get(areaId);
         if (!area) return;
 
-        // Se houve alteração, atualiza a imagem "after"
-        if (analysisResult.status === 'alteracao') {
+        // Se a análise veio do pipeline real, usa as imagens NDVI
+        if (!analysisResult.isDemo && analysisResult.images) {
+            this.images[areaId] = {
+                before: {
+                    dataUrl: analysisResult.images.ndviBefore || this._generateImage(area, 'before', 'preserved').dataUrl,
+                    width: 400, height: 400,
+                    date: analysisResult.previousDate || new Date().toISOString(),
+                    condition: 'preserved', period: 'before',
+                    areaName: area.nome, isRealNDVI: !!analysisResult.images.ndviBefore
+                },
+                after: {
+                    dataUrl: analysisResult.images.ndviAfter || this._generateImage(area, 'after', 'preserved').dataUrl,
+                    width: 400, height: 400,
+                    date: analysisResult.currentDate || new Date().toISOString(),
+                    condition: analysisResult.status === 'alteracao' ? 'degraded' : 'preserved',
+                    period: 'after', areaName: area.nome,
+                    isRealNDVI: !!analysisResult.images.ndviAfter
+                },
+                changeOverlay: analysisResult.images.changeOverlay || null,
+                hasChange: analysisResult.status === 'alteracao',
+                changeType: analysisResult.type || 'normal',
+                isReal: !analysisResult.isDemo
+            };
+            console.log(`[ImageService] Imagens NDVI reais carregadas para "${area.nome}"`);
+        } else if (analysisResult.status === 'alteracao') {
             this.images[areaId].after = this._generateImage(area, 'after', 'degraded');
             this.images[areaId].hasChange = true;
             this.images[areaId].changeType = analysisResult.type;
         } else {
-            // Mantém ou atualiza com preservado
             this.images[areaId].after = this._generateImage(area, 'after', 'preserved');
             this.images[areaId].hasChange = false;
         }

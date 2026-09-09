@@ -9,6 +9,7 @@ class App {
         this.currentView = 'dashboard';
         this.isDrawing = false;
         this.drawnPolygon = null;
+        this._editingAreaId = null;
         
         // Serviços
         this.storage = null;
@@ -77,6 +78,15 @@ class App {
         // NOVO: Inicializa Image Comparator
         this.imageComparator = new ImageComparator();
         this.imageComparator.init();
+        
+        // NOVO: Inicializa RasterProcessor + CopernicusService
+        this.rasterProcessor = new RasterProcessor();
+        this.rasterProcessor.init();
+        
+        if (APP_CONFIG.MODE === 'REAL' || window.CopernicusService) {
+            this.copernicusService = new CopernicusService();
+            this.copernicusService.init();
+        }
         
         // Inicializa UI
         this.dashboard = new Dashboard();
@@ -317,6 +327,13 @@ class App {
             this._runAnalysis();
         });
 
+        // Upload de bandas — detecta arquivos selecionados
+        ['fileRedBefore', 'fileNirBefore', 'fileRedAfter', 'fileNirAfter'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', () => {
+                this._updateUploadStatus();
+            });
+        });
+
         // Configurações
         document.getElementById('resetDataBtn')?.addEventListener('click', () => {
             this._resetData();
@@ -448,22 +465,68 @@ class App {
     }
 
     /**
-     * Abre o modal de criação de área
+     * Abre o modal de criação/edição de área
+     * @param {Object|null} area - Se fornecido, abre em modo edição
      */
-    openAreaModal() {
+    openAreaModal(area = null) {
         const modal = document.getElementById('areaModal');
         if (!modal) return;
         
+        this._editingAreaId = area ? area.id : null;
+        
+        const header = modal.querySelector('.modal-header h2');
+        const saveBtn = document.getElementById('saveAreaBtn');
+        
+        if (area) {
+            header.textContent = 'Editar Área Monitorada';
+            saveBtn.textContent = '💾 Atualizar Área';
+        } else {
+            header.textContent = 'Nova Área Monitorada';
+            saveBtn.textContent = '💾 Salvar Área';
+        }
+        
         modal.classList.add('open');
         
-        // Reseta o formulário
-        document.getElementById('areaName').value = '';
-        document.getElementById('areaDescription').value = '';
-        document.getElementById('areaResponsible').value = 'Operador';
-        document.getElementById('geoArea').textContent = '--';
-        document.getElementById('geoPerimeter').textContent = '--';
-        document.getElementById('geoCentroidLat').textContent = '--';
-        document.getElementById('geoCentroidLng').textContent = '--';
+        if (area) {
+            document.getElementById('areaName').value = area.nome || '';
+            document.getElementById('areaDescription').value = area.descricao || '';
+            document.getElementById('areaCategory').value = area.categoria || 'preservacao';
+            document.getElementById('areaPriority').value = area.prioridade || 'media';
+            document.getElementById('areaStatus').value = area.status || 'ativo';
+            document.getElementById('areaFrequency').value = area.frequency || 'manual';
+            document.getElementById('areaResponsible').value = area.responsavel || 'Operador';
+            document.getElementById('areaMunicipality').value = area.municipality || '';
+            document.getElementById('areaState').value = area.state || '';
+            
+            if (area.areaHa) document.getElementById('geoArea').textContent = area.areaHa.toFixed(1) + ' ha';
+            if (area.perimeterKm) document.getElementById('geoPerimeter').textContent = area.perimeterKm.toFixed(2) + ' km';
+            
+            if (area.geojson) {
+                try {
+                    const centroid = turf.centroid(area.geojson);
+                    const coords = centroid.geometry.coordinates;
+                    document.getElementById('geoCentroidLat').textContent = coords[1].toFixed(6);
+                    document.getElementById('geoCentroidLng').textContent = coords[0].toFixed(6);
+                } catch (e) {
+                    document.getElementById('geoCentroidLat').textContent = '--';
+                    document.getElementById('geoCentroidLng').textContent = '--';
+                }
+            }
+        } else {
+            document.getElementById('areaName').value = '';
+            document.getElementById('areaDescription').value = '';
+            document.getElementById('areaCategory').value = 'preservacao';
+            document.getElementById('areaPriority').value = 'media';
+            document.getElementById('areaStatus').value = 'ativo';
+            document.getElementById('areaFrequency').value = 'manual';
+            document.getElementById('areaResponsible').value = 'Operador';
+            document.getElementById('areaMunicipality').value = '';
+            document.getElementById('areaState').value = '';
+            document.getElementById('geoArea').textContent = '--';
+            document.getElementById('geoPerimeter').textContent = '--';
+            document.getElementById('geoCentroidLat').textContent = '--';
+            document.getElementById('geoCentroidLng').textContent = '--';
+        }
         
         // Limpa desenho
         this._clearDraw();
@@ -471,7 +534,7 @@ class App {
         // Inicializa draw map
         setTimeout(() => {
             try {
-                this._initDrawMap();
+                this._initDrawMap(area);
             } catch (e) {
                 console.error('Erro ao inicializar mapa de desenho:', e);
                 this._showNotification('⚠️ Erro', 'Erro ao inicializar o mapa de desenho.', 'critical');
@@ -484,14 +547,22 @@ class App {
      */
     closeAreaModal() {
         document.getElementById('areaModal').classList.remove('open');
+        this._editingAreaId = null;
         this._clearDraw();
+        
+        // Reseta título e botão para modo criação
+        const header = document.querySelector('#areaModal .modal-header h2');
+        const saveBtn = document.getElementById('saveAreaBtn');
+        if (header) header.textContent = 'Nova Área Monitorada';
+        if (saveBtn) saveBtn.textContent = '💾 Salvar Área';
     }
 
     /**
      * Inicializa mapa de desenho
+     * @param {Object|null} area - Se fornecido, carrega o polígono existente
      * @private
      */
-    _initDrawMap() {
+    _initDrawMap(area = null) {
         const container = document.getElementById('drawMap');
         if (!container) return;
         
@@ -597,6 +668,33 @@ class App {
         // Atualiza tamanho
         setTimeout(() => {
             if (this.drawMap) this.drawMap.invalidateSize();
+            
+            // Carrega polígono existente no modo edição
+            if (area && area.geojson && this.drawFeatureGroup) {
+                try {
+                    const geoLayer = L.geoJSON(area.geojson, {
+                        style: {
+                            color: '#00d4ff',
+                            weight: 2,
+                            opacity: 0.8,
+                            fillColor: '#00d4ff',
+                            fillOpacity: 0.2
+                        }
+                    });
+                    this.drawFeatureGroup.clearLayers();
+                    geoLayer.eachLayer(layer => {
+                        this.drawFeatureGroup.addLayer(layer);
+                        this.drawnPolygon = layer;
+                    });
+                    document.getElementById('drawStatus').textContent = '✅ Polígono existente carregado. Desenhe um novo para substituir.';
+                    this._updateGeoInfo(this.drawnPolygon);
+                    
+                    // Ajusta viewport para o polígono
+                    this.drawMap.fitBounds(geoLayer.getBounds(), { padding: [20, 20] });
+                } catch (e) {
+                    console.error('Erro ao carregar polígono existente:', e);
+                }
+            }
         }, 200);
     }
 
@@ -649,7 +747,7 @@ class App {
     }
 
     /**
-     * Salva uma nova área
+     * Salva uma nova área ou atualiza existente
      * @private
      */
     _saveArea() {
@@ -675,7 +773,6 @@ class App {
             const area = turf.area(geojson);
             const areaHa = area / 10000;
             
-            // Cria área
             const areaData = {
                 nome: name,
                 descricao: document.getElementById('areaDescription').value.trim(),
@@ -684,13 +781,33 @@ class App {
                 status: document.getElementById('areaStatus').value,
                 responsavel: document.getElementById('areaResponsible').value.trim() || 'Operador',
                 frequency: document.getElementById('areaFrequency').value,
+                municipality: document.getElementById('areaMunicipality').value.trim() || '--',
+                state: document.getElementById('areaState').value || '--',
                 geojson: geojson,
                 areaHa: areaHa,
-                perimeterKm: turf.length(geojson, { units: 'kilometers' }),
-                municipality: '--',
-                state: '--',
-                lastAnalysis: null,
-                analysis: {
+                perimeterKm: turf.length(geojson, { units: 'kilometers' })
+            };
+            
+            let saved;
+            
+            if (this._editingAreaId) {
+                // Modo edição
+                saved = this.areaService.update(this._editingAreaId, areaData);
+                this._showNotification(
+                    '✅ Área atualizada',
+                    `"${saved.nome}" foi atualizada com sucesso! Área: ${areaHa.toFixed(1)} ha`,
+                    'success'
+                );
+                this.auditService.log({
+                    action: 'Área atualizada',
+                    details: `Área "${saved.nome}" atualizada (${areaHa.toFixed(1)} ha)`,
+                    areaId: saved.id,
+                    user: saved.responsavel
+                });
+            } else {
+                // Modo criação
+                areaData.lastAnalysis = null;
+                areaData.analysis = {
                     status: 'normal',
                     type: 'normal',
                     severity: 'normal',
@@ -699,31 +816,26 @@ class App {
                     affectedPercentage: 0,
                     previousDate: null,
                     currentDate: null
-                },
-                history: []
-            };
+                };
+                areaData.history = [];
+                
+                saved = this.areaService.create(areaData);
+                this._showNotification(
+                    '✅ Área criada',
+                    `"${saved.nome}" foi criada com sucesso! Área: ${areaHa.toFixed(1)} ha`,
+                    'success'
+                );
+                this.auditService.log({
+                    action: 'Área criada',
+                    details: `Nova área "${saved.nome}" criada com ${areaHa.toFixed(1)} ha`,
+                    areaId: saved.id,
+                    user: saved.responsavel
+                });
+            }
             
-            const saved = this.areaService.create(areaData);
-            
-            // Fecha modal
+            this._editingAreaId = null;
             this.closeAreaModal();
-            
-            // Atualiza UI
             this._updateUI();
-            
-            this._showNotification(
-                '✅ Área criada',
-                `"${saved.nome}" foi criada com sucesso! Área: ${areaHa.toFixed(1)} ha`,
-                'success'
-            );
-            
-            // Adiciona ao histórico
-            this.auditService.log({
-                action: 'Área criada',
-                details: `Nova área "${saved.nome}" criada com ${areaHa.toFixed(1)} ha`,
-                areaId: saved.id,
-                user: saved.responsavel
-            });
             
         } catch (e) {
             console.error('Erro ao salvar área:', e);
@@ -753,18 +865,31 @@ class App {
         const resultContainer = document.getElementById('analysisResult');
         if (!resultContainer) return;
         
+        // Coleta arquivos de upload (se houver)
+        const uploadedFiles = this._getUploadedFiles();
+        const useRealData = uploadedFiles.length > 0 && (APP_CONFIG.MODE === 'REAL' || this.copernicusService);
+        
         // Mostra loading
         resultContainer.innerHTML = `
             <div style="text-align:center;padding:40px;">
                 <div style="font-size:32px;margin-bottom:16px;">⏳</div>
                 <div style="font-size:18px;font-weight:500;">Analisando área "${area.nome}"...</div>
-                <div style="color:var(--text-muted);margin-top:8px;">Processando dados geoespaciais</div>
+                <div style="color:var(--text-muted);margin-top:8px;">
+                    ${useRealData 
+                        ? `Processando ${uploadedFiles.length} banda(s) GeoTIFF via pipeline NDVI` 
+                        : 'Processando dados geoespaciais (modo demonstração)'}
+                </div>
             </div>
         `;
         
         // Inicia análise
         try {
-            const result = await this.analysisService.analyze(area);
+            const options = {};
+            if (useRealData) {
+                options.files = uploadedFiles;
+            }
+            
+            const result = await this.analysisService.analyze(area, options);
             
             // Mostra resultado
             this.analysisService.renderResult(resultContainer, result, area);
@@ -773,15 +898,16 @@ class App {
             this._updateUI();
             
             // Notificação
+            const modeLabel = result.isDemo ? ' (DEMO)' : ' (REAL)';
             if (result.status !== 'normal') {
                 this._showNotification(
-                    `⚠️ Alerta detectado em "${area.nome}"`,
+                    `⚠️ Alerta detectado em "${area.nome}"${modeLabel}`,
                     `${result.type_label} - Confiança: ${(result.confidence * 100).toFixed(0)}%`,
                     result.severity
                 );
             } else {
                 this._showNotification(
-                    `✅ Análise concluída: "${area.nome}"`,
+                    `✅ Análise concluída: "${area.nome}"${modeLabel}`,
                     'Nenhuma alteração significativa detectada.',
                     'success'
                 );
@@ -796,6 +922,42 @@ class App {
                 </div>
             `;
             this._showNotification('⚠️ Erro', 'Falha ao executar análise.', 'critical');
+        }
+    }
+
+    /**
+     * Retorna arquivos de banda selecionados nos inputs de upload
+     * @returns {File[]}
+     * @private
+     */
+    _getUploadedFiles() {
+        const files = [];
+        ['fileRedBefore', 'fileNirBefore', 'fileRedAfter', 'fileNirAfter'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input && input.files && input.files.length > 0) {
+                files.push(input.files[0]);
+            }
+        });
+        return files;
+    }
+
+    /**
+     * Atualiza indicador de modo baseado nos uploads
+     * @private
+     */
+    _updateUploadStatus() {
+        const files = this._getUploadedFiles();
+        const label = document.getElementById('uploadModeLabel');
+        if (files.length > 0) {
+            if (label) {
+                label.textContent = `${files.length} ARQUIVO(S)`;
+                label.style.background = 'var(--status-normal)';
+            }
+        } else {
+            if (label) {
+                label.textContent = 'MODO DEMO';
+                label.style.background = 'var(--accent-yellow)';
+            }
         }
     }
 

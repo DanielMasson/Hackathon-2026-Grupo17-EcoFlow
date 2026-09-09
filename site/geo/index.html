@@ -21,6 +21,9 @@
     <!-- Leaflet Draw JS -->
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
     
+    <!-- GeoTIFF.js (leitura de bandas Sentinel-2 no browser) -->
+    <script src="https://cdn.jsdelivr.net/npm/geotiff@2.7.0/dist-browser/main.js"></script>
+    
     <!-- CSS Principal -->
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -232,6 +235,39 @@
                         </select>
                         <button class="btn-primary" id="runAnalysisBtn">🔍 Analisar Área</button>
                     </div>
+                    
+                    <div id="bandUploadSection" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-top:12px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                            <div style="font-weight:600;font-size:14px;">🛰️ Bandas Sentinel-2 (Opcional)</div>
+                            <span id="uploadModeLabel" style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--accent-yellow);color:var(--bg-primary);">MODO DEMO</span>
+                        </div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+                            Para análise real, faça upload de bandas GeoTIFF (.tiff) baixadas do 
+                            <a href="https://browser.dataspace.copernicus.eu/" target="_blank" style="color:var(--accent-blue);">Copernicus Browser</a>.
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <div>
+                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B04 (RED) — Antes</label>
+                                <input type="file" id="fileRedBefore" accept=".tif,.tiff" style="font-size:12px;width:100%;">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B08 (NIR) — Antes</label>
+                                <input type="file" id="fileNirBefore" accept=".tif,.tiff" style="font-size:12px;width:100%;">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B04 (RED) — Depois</label>
+                                <input type="file" id="fileRedAfter" accept=".tif,.tiff" style="font-size:12px;width:100%;">
+                            </div>
+                            <div>
+                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B08 (NIR) — Depois</label>
+                                <input type="file" id="fileNirAfter" accept=".tif,.tiff" style="font-size:12px;width:100%;">
+                            </div>
+                        </div>
+                        <div style="margin-top:10px;font-size:11px;color:var(--text-muted);">
+                            💡 Envie 2 arquivos (B04+B08 da mesma cena) ou 4 arquivos (B04/B08 antes + B04/B08 depois).
+                        </div>
+                    </div>
+
                     <div class="analysis-result" id="analysisResult">
                         <div class="analysis-placeholder">
                             Selecione uma área e clique em "Analisar Área"
@@ -376,6 +412,45 @@
                     <label>Responsável</label>
                     <input type="text" id="areaResponsible" placeholder="Nome do responsável">
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Município</label>
+                        <input type="text" id="areaMunicipality" placeholder="Ex: Brasília">
+                    </div>
+                    <div class="form-group">
+                        <label>Estado</label>
+                        <select id="areaState">
+                            <option value="">-- Selecione --</option>
+                            <option value="AC">AC</option>
+                            <option value="AL">AL</option>
+                            <option value="AP">AP</option>
+                            <option value="AM">AM</option>
+                            <option value="BA">BA</option>
+                            <option value="CE">CE</option>
+                            <option value="DF">DF</option>
+                            <option value="ES">ES</option>
+                            <option value="GO">GO</option>
+                            <option value="MA">MA</option>
+                            <option value="MT">MT</option>
+                            <option value="MS">MS</option>
+                            <option value="MG">MG</option>
+                            <option value="PA">PA</option>
+                            <option value="PB">PB</option>
+                            <option value="PR">PR</option>
+                            <option value="PE">PE</option>
+                            <option value="PI">PI</option>
+                            <option value="RJ">RJ</option>
+                            <option value="RN">RN</option>
+                            <option value="RS">RS</option>
+                            <option value="RO">RO</option>
+                            <option value="RR">RR</option>
+                            <option value="SC">SC</option>
+                            <option value="SP">SP</option>
+                            <option value="SE">SE</option>
+                            <option value="TO">TO</option>
+                        </select>
+                    </div>
+                </div>
                 
                 <div class="geo-info">
                     <h4>Informações Geográficas</h4>
@@ -465,6 +540,8 @@
     <script src="js/ui/services/AreaService.js"></script>
     <script src="js/ui/services/AlertService.js"></script>
     <script src="js/ui/services/SatelliteService.js"></script>
+    <script src="js/ui/services/RasterProcessor.js"></script>
+    <script src="js/ui/services/CopernicusService.js"></script>
     <script src="js/ui/services/AnalysisService.js"></script>
     <script src="js/ui/services/ReportService.js"></script>
     <script src="js/ui/services/MapService.js"></script>

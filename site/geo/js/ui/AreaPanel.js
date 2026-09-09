@@ -193,11 +193,9 @@ class AreaPanel {
 
             case 'edit':
                 // Abre edição da área
-                window.app?._showNotification(
-                    '✏️ Editar Área',
-                    `Editando "${area.nome}". (Funcionalidade em desenvolvimento)`,
-                    'info'
-                );
+                if (window.app) {
+                    window.app.openAreaModal(area);
+                }
                 break;
 
             case 'delete':

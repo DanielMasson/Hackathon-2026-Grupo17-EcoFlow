@@ -13,6 +13,7 @@ class SatelliteService {
             apiKey: null,
             collection: 'SENTINEL-2'
         };
+        this.copernicusService = null;
     }
 
     /**
@@ -26,6 +27,13 @@ class SatelliteService {
         if (settings) {
             this.config = { ...this.config, ...settings };
             this.isConfigured = !!settings.endpoint;
+        }
+
+        // Inicializa CopernicusService se disponível
+        if (window.CopernicusService && APP_CONFIG.MODE === 'REAL') {
+            this.copernicusService = new CopernicusService();
+            this.copernicusService.init();
+            console.log('[SatelliteService] CopernicusService integrado');
         }
 
         this._initialized = true;
@@ -113,15 +121,49 @@ class SatelliteService {
     }
 
     /**
-     * Busca imagens em modo real (placeholder)
-     * @param {Object} params 
+     * Busca imagens em modo real via Copernicus STAC
+     * @param {Object} params
      * @returns {Promise<Object>}
      * @private
      */
     async _realSearch(params) {
-        // Placeholder para integração Copernicus
-        console.warn('[SatelliteService] Modo REAL: integração Copernicus não implementada.');
-        return this._demoSearch(params);
+        if (!this.copernicusService) {
+            console.warn('[SatelliteService] CopernicusService não disponível. Usando demo.');
+            return this._demoSearch(params);
+        }
+
+        try {
+            const { aoi, startDate, endDate, cloudCoverage } = params;
+            const result = await this.copernicusService.search({
+                bbox: aoi,
+                startDate: startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
+                endDate: endDate || new Date().toISOString().slice(0, 10),
+                maxCloud: cloudCoverage || 20
+            });
+
+            return {
+                images: result.items.map(item => ({
+                    id: item.id,
+                    satellite: 'Sentinel-2',
+                    date: item.date,
+                    cloudCover: item.cloudCover,
+                    resolution: item.gsd,
+                    coverage: null,
+                    quality: (item.cloudCover || 0) < 15 ? 'EXCELENTE' : (item.cloudCover || 0) < 30 ? 'ADEQUADA' : 'PREJUDICADA',
+                    bands: item.bands,
+                    stacItem: item,
+                    isDemo: false
+                })),
+                count: result.count,
+                totalAvailable: result.count,
+                isDemo: false,
+                message: result.count === 0 ? 'Nenhuma imagem encontrada com os parâmetros selecionados.' : null
+            };
+        } catch (err) {
+            console.error('[SatelliteService] Erro na busca real:', err);
+            this.isConfigured = false;
+            return this._demoSearch(params);
+        }
     }
 
     /**

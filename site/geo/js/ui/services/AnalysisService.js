@@ -20,6 +20,8 @@ class AnalysisService {
         this.areaService = window.app?.areaService;
         this.alertService = window.app?.alertService;
         this.auditService = window.app?.auditService;
+        this.copernicusService = window.app?.copernicusService || null;
+        this.rasterProcessor = window.app?.rasterProcessor || null;
         this._initialized = true;
         console.log('[AnalysisService] Inicializado');
     }
@@ -231,16 +233,232 @@ class AnalysisService {
     }
 
     /**
-     * Análise real (preparada para integração futura)
-     * @param {Object} area 
-     * @param {Object} options 
+     * Análise real usando bandas Sentinel-2 via Copernicus.
+     * @param {Object} area
+     * @param {Object} options - { files: File[], threshold, maxDateRange }
+     * @returns {Promise<Object>}
+     * @private
+     */
+    async _realAnalysis(area, options = {}) {
+        if (!this.copernicusService || !this.rasterProcessor) {
+            console.warn('[AnalysisService] CopernicusService/RasterProcessor não inicializados. Usando demo.');
+            return this._demoAnalysis(area);
+        }
+
+        // Determina fonte de dados: upload local ou busca STAC
+        const files = options.files || window.app?._pendingBandFiles || null;
+        let before, after;
+
+        if (files && files.length >= 2) {
+            // Modo upload local
+            console.log('[AnalysisService] Usando bandas locais (' + files.length + ' arquivos)');
+            const pair = await this.copernicusService.loadPairFromFiles(files);
+            before = pair.before;
+            after = pair.after || pair.before; // Se só tem 1 cena, compara consigo mesma
+        } else if (area.geojson) {
+            // Modo STAC: busca imagens pela AOI
+            console.log('[AnalysisService] Buscando imagens no Copernicus...');
+            const bbox = this.copernicusService.geojsonToBBox(area.geojson);
+            const now = new Date();
+            const startDate = options.startDate || new Date(now - 60 * 86400000).toISOString().slice(0, 10);
+            const endDate = options.endDate || now.toISOString().slice(0, 10);
+
+            const searchResult = await this.copernicusService.search({
+                bbox,
+                startDate,
+                endDate,
+                maxCloud: options.maxCloud || 20
+            });
+
+            if (searchResult.items.length < 2) {
+                console.warn('[AnalysisService] Menos de 2 cenas encontradas, usando modo demo.');
+                return this._demoAnalysis(area);
+            }
+
+            // Seleciona antes (menor data) e depois (maior data)
+            const sorted = searchResult.items.sort((a, b) => new Date(a.date) - new Date(b.date));
+            const stacBefore = sorted[0];
+            const stacAfter = sorted[sorted.length - 1];
+
+            console.log(`[AnalysisService] Antes: ${stacBefore.date} | Depois: ${stacAfter.date}`);
+
+            // Carrega bandas em paralelo
+            const [beforeBands, afterBands] = await Promise.all([
+                this.copernicusService.loadPairFromSTAC(stacBefore),
+                this.copernicusService.loadPairFromSTAC(stacAfter)
+            ]);
+
+            before = beforeBands;
+            after = afterBands;
+        } else {
+            console.warn('[AnalysisService] Área sem GeoJSON e sem arquivos. Usando demo.');
+            return this._demoAnalysis(area);
+        }
+
+        // Valida dimensões
+        if (before.width !== after.width || before.height !== after.height) {
+            console.warn('[AnalysisService] Dimensões diferentes antes/depois. Ajustando para menor.');
+            const minW = Math.min(before.width, after.width);
+            const minH = Math.min(before.height, after.height);
+            before = { ...before, width: minW, height: minH };
+            after = { ...after, width: minW, height: minH };
+        }
+
+        // Processa pipeline NDVI + detecção
+        const threshold = options.threshold || APP_CONFIG.ANALYSIS.DETECTION.THRESHOLD;
+        const minArea = options.minArea || APP_CONFIG.ANALYSIS.DETECTION.MIN_AREA_PIXELS;
+
+        const pipelineResult = this.rasterProcessor.processBands({
+            redBefore: before.red,
+            nirBefore: before.nir,
+            redAfter: after.red,
+            nirAfter: after.nir,
+            width: before.width,
+            height: before.height,
+            geoKeys: before.geoKeys,
+            options: { threshold, minArea }
+        });
+
+        // Renderiza NDVI como canvas para UI
+        let ndviBeforeImage = null, ndviAfterImage = null, changeOverlayImage = null;
+        try {
+            ndviBeforeImage = this.rasterProcessor.renderNDVICanvas(
+                pipelineResult.ndviBefore, before.width, before.height
+            ).toDataURL('image/png');
+            ndviAfterImage = this.rasterProcessor.renderNDVICanvas(
+                pipelineResult.ndviAfter, before.width, before.height
+            ).toDataURL('image/png');
+            changeOverlayImage = this.rasterProcessor.renderChangeOverlay(
+                pipelineResult.ndviAfter, pipelineResult.detection.mask, before.width, before.height
+            ).toDataURL('image/png');
+        } catch (e) {
+            console.warn('[AnalysisService] Erro ao renderizar NDVI:', e);
+        }
+
+        // Monta resultado no formato esperado pelo sistema
+        const classif = pipelineResult.classification;
+        const detection = pipelineResult.detection;
+
+        // Pega a maior região detectada
+        const mainRegion = detection.regions.length > 0 ? detection.regions[0] : null;
+
+        const result = {
+            status: classif.type === 'normal' ? 'normal' : 'alteracao',
+            type: classif.type,
+            type_label: classif.typeLabel,
+            severity: classif.severity,
+            confidence: classif.confidence,
+            affectedAreaHa: mainRegion ? mainRegion.areaHa : 0,
+            affectedPercentage: detection.stats.changedPercentage,
+            previousDate: before.date || options.startDate || null,
+            currentDate: after.date || options.endDate || null,
+            indices: {
+                ndviBefore: pipelineResult.ndviBeforeStats.mean,
+                ndviAfter: pipelineResult.ndviAfterStats.mean,
+                ndviChange: pipelineResult.ndviAfterStats.mean - pipelineResult.ndviBeforeStats.mean,
+                nbrBefore: null,
+                nbrAfter: null,
+                nbrChange: null
+            },
+            // Dados extras do pipeline real
+            pipeline: {
+                stats: detection.stats,
+                regions: detection.regions,
+                ndviBeforeStats: pipelineResult.ndviBeforeStats,
+                ndviAfterStats: pipelineResult.ndviAfterStats
+            },
+            images: {
+                ndviBefore: ndviBeforeImage,
+                ndviAfter: ndviAfterImage,
+                changeOverlay: changeOverlayImage
+            },
+            isDemo: false
+        };
+
+        return result;
+    }
+
+    /**
+     * Análise de demonstração (dados simulados).
+     * @param {Object} area
      * @returns {Object}
      * @private
      */
-    _realAnalysis(area, options) {
-        // Placeholder para integração com Copernicus
-        console.warn('[AnalysisService] Modo REAL não implementado. Usando dados simulados.');
-        return this._demoAnalysis(area);
+    _demoAnalysis(area) {
+        const currentStatus = area.analysis?.status || 'normal';
+        const shouldChange = Math.random() > 0.6;
+
+        let result;
+
+        if (currentStatus === 'normal' && shouldChange) {
+            result = this._generateRandomChange();
+        } else if (currentStatus === 'alteracao' && shouldChange) {
+            result = this._generateRandomChange();
+        } else {
+            result = {
+                status: currentStatus,
+                type: area.analysis?.type || 'normal',
+                type_label: this._getTypeLabel(area.analysis?.type || 'normal'),
+                severity: area.analysis?.severity || 'normal',
+                confidence: area.analysis?.confidence || 0.95,
+                affectedAreaHa: area.analysis?.affectedAreaHa || 0,
+                affectedPercentage: area.analysis?.affectedPercentage || 0,
+                previousDate: area.analysis?.previousDate || this._getDateDaysAgo(10),
+                currentDate: area.analysis?.currentDate || this._getDateDaysAgo(1),
+                indices: {
+                    ndviBefore: 0.75,
+                    ndviAfter: 0.74,
+                    ndviChange: -0.01,
+                    nbrBefore: 0.65,
+                    nbrAfter: 0.64,
+                    nbrChange: -0.01
+                },
+                isDemo: true
+            };
+        }
+
+        return result;
+    }
+
+    /**
+     * Gera uma alteração aleatória para demonstração
+     * @returns {Object}
+     * @private
+     */
+    _generateRandomChange() {
+        const types = [
+            { type: 'possivel_desmatamento', severity: 'alta', minArea: 5, maxArea: 30 },
+            { type: 'possivel_queimada', severity: 'alta', minArea: 8, maxArea: 40 },
+            { type: 'alteracao_vegetacao', severity: 'media', minArea: 2, maxArea: 15 },
+            { type: 'solo_exposto', severity: 'media', minArea: 1, maxArea: 10 },
+            { type: 'normal', severity: 'normal', minArea: 0, maxArea: 0 }
+        ];
+
+        const selected = types[Math.floor(Math.random() * types.length)];
+        const areaHa = selected.minArea + Math.random() * (selected.maxArea - selected.minArea);
+        const confidence = 0.75 + Math.random() * 0.2;
+        const ndviChange = -(0.1 + Math.random() * 0.3);
+
+        return {
+            status: selected.type === 'normal' ? 'normal' : 'alteracao',
+            type: selected.type,
+            type_label: this._getTypeLabel(selected.type),
+            severity: selected.severity,
+            confidence: Math.min(confidence, 0.98),
+            affectedAreaHa: areaHa,
+            affectedPercentage: areaHa / (1000 + Math.random() * 2000) * 100,
+            previousDate: this._getDateDaysAgo(10 + Math.floor(Math.random() * 10)),
+            currentDate: this._getDateDaysAgo(1 + Math.floor(Math.random() * 5)),
+            indices: {
+                ndviBefore: 0.6 + Math.random() * 0.3,
+                ndviAfter: Math.max(0.1, 0.6 + Math.random() * 0.3 + ndviChange),
+                ndviChange: ndviChange,
+                nbrBefore: 0.5 + Math.random() * 0.3,
+                nbrAfter: Math.max(0.05, 0.5 + Math.random() * 0.3 + ndviChange * 0.8),
+                nbrChange: ndviChange * 0.8
+            },
+            isDemo: true
+        };
     }
 
     /**
@@ -346,6 +564,46 @@ class AnalysisService {
                         <div style="font-weight:500;">${result.currentDate ? new Date(result.currentDate).toLocaleDateString() : '--'}</div>
                     </div>
                 </div>
+
+                ${result.images ? `
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">NDVI Antes</div>
+                        <img src="${result.images.ndviBefore}" style="width:100%;border-radius:6px;" alt="NDVI Antes">
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;text-align:center;">
+                            Média: ${result.pipeline?.ndviBeforeStats?.mean?.toFixed(3) || '--'}
+                        </div>
+                    </div>
+                    <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">NDVI Depois</div>
+                        <img src="${result.images.ndviAfter}" style="width:100%;border-radius:6px;" alt="NDVI Depois">
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;text-align:center;">
+                            Média: ${result.pipeline?.ndviAfterStats?.mean?.toFixed(3) || '--'}
+                        </div>
+                    </div>
+                    <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Áreas Detectadas</div>
+                        <img src="${result.images.changeOverlay}" style="width:100%;border-radius:6px;" alt="Mudanças">
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;text-align:center;">
+                            ${result.pipeline?.stats?.numRegions || 0} região(ões)
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
+                ${result.pipeline && !result.isDemo ? `
+                <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">
+                    <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Estatísticas do Pipeline</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;font-size:12px;">
+                        <div>Dimensão: ${result.pipeline.stats.width}x${result.pipeline.stats.height}</div>
+                        <div>Total pixels: ${result.pipeline.stats.totalPixels.toLocaleString()}</div>
+                        <div>Alterados: ${result.pipeline.stats.totalChangedPixels.toLocaleString()}</div>
+                        <div>% Alterado: ${result.pipeline.stats.changedPercentage.toFixed(3)}%</div>
+                        <div>Regiões: ${result.pipeline.stats.numRegions}</div>
+                        <div>Threshold: ${result.pipeline.stats.threshold}</div>
+                    </div>
+                </div>
+                ` : ''}
 
                 ${isAlteration ? `
                 <div style="background:rgba(255,215,0,0.05);border:1px solid rgba(255,215,0,0.2);border-radius:8px;padding:12px;">

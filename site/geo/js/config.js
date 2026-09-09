@@ -5,7 +5,7 @@
 
 const APP_CONFIG = {
     // Modo de operação: 'DEMO' ou 'REAL'
-    MODE: 'DEMO',
+    MODE: 'REAL',
     
     // Versão
     VERSION: '1.0.0',
@@ -37,11 +37,42 @@ const APP_CONFIG = {
     ANALYSIS: {
         NDVI_THRESHOLD: 0.2,
         MIN_AFFECTED_AREA: 0.5, // hectares
+        // Thresholds do pipeline de detecção (port do Python)
+        DETECTION: {
+            THRESHOLD: 0.15,           // limiar de diferença NDVI (detect_changes default)
+            THRESHOLD_LOW: 0.05,       // limiar baixo para imagens próximas no tempo
+            MIN_AREA_PIXELS: 20,       // área mínima em pixels (Sentinel-2 = 2000m²)
+            MIN_AREA_PIXELS_LOW: 10,   // área mínima para limiar baixo
+            PIXEL_SIZE_M: 10           // Sentinel-2 resolução: 10m x 10m
+        },
+        // Classificação de severidade
+        CLASSIFICATION: {
+            DESMATAMENTO_NDVI_DROP: 0.35,
+            DESMATAMENTO_AREA_PCT: 2.0,
+            QUEIMADA_NDVI_DROP: 0.25,
+            QUEIMADA_AREA_PCT: 1.0,
+            VEGETACAO_NDVI_DROP: 0.15,
+            SOLO_AREA_PCT: 0.5
+        },
         CONFIDENCE_WEIGHTS: {
             imageQuality: 0.3,
             cloudCoverage: 0.25,
             changeMagnitude: 0.3,
             temporalConsistency: 0.15
+        }
+    },
+    
+    // Configurações Copernicus CDSE
+    COPERNICUS: {
+        STAC_URL: 'https://stac.dataspace.copernicus.eu/v1/search',
+        COLLECTION: 'sentinel-2-l2a',
+        MAX_CLOUD_COVERAGE: 20,
+        BAND_MAP: { red: 'B04', nir: 'B08' },
+        MAX_SEARCH_RESULTS: 10,
+        // URLs de referência
+        DOCS: {
+            stac: 'https://documentation.dataspace.copernicus.eu/APIs/Stac.html',
+            odata: 'https://documentation.dataspace.copernicus.eu/APIs/OData.html'
         }
     },
     
