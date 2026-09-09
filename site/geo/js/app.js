@@ -32,6 +32,7 @@ class App {
         this.auditService = null;
         this.imageService = null;
         this.imageComparator = null;
+        this.verificationPanel = null;
         
         // UI
         this.dashboard = null;
@@ -115,6 +116,13 @@ class App {
         
         this.timeline = new Timeline();
         this.timeline.init();
+
+        // NOVO: inicializa o store de imagens de resultado (IndexedDB) e o
+        // painel de Verificação Visual (comparação NDVI x satélite real).
+        window.resultImageStore?.init();
+
+        this.verificationPanel = new VerificationPanel();
+        this.verificationPanel.init();
         
         // Carrega dados
         this._loadData();
@@ -239,6 +247,9 @@ class App {
         
         // Alertas
         if (this.alertPanel) this.alertPanel.render(alerts);
+
+        // NOVO: Verificação Visual (comparação NDVI x satélite real)
+        if (this.verificationPanel) this.verificationPanel.render(alerts);
         
         // Análise - dropdown
         this._updateAnalysisDropdown(areas);
@@ -1123,6 +1134,28 @@ class App {
         body.innerHTML = html;
         
         modal.classList.add('open');
+    }
+
+    /**
+     * Marca o alerta ativo mais recente de uma área como falso positivo,
+     * a partir da verificação visual (comparador NDVI x satélite real).
+     * @param {string} areaId
+     */
+    _markFalsePositive(areaId) {
+        const alerts = this.alertService?.getAll({ areaId }) || [];
+        const active = alerts.find(a => a.status === 'Detectado' || a.status === 'Em análise');
+        if (!active) {
+            this._showNotification('ℹ️', 'Nenhum alerta ativo para esta área.', 'info');
+            return;
+        }
+        this.alertService.updateStatus(active.id, 'Falso positivo');
+        this.auditService?.log({
+            action: 'Falso positivo confirmado',
+            details: `Alerta de "${active.areaName}" marcado como falso positivo após verificação visual (satélite real).`,
+            areaId
+        });
+        this._updateUI();
+        this._showNotification('✅ Marcado', `Alerta de "${active.areaName}" marcado como falso positivo.`, 'success');
     }
 }
 

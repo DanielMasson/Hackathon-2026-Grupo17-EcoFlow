@@ -2,40 +2,22 @@
  * ANALYSIS SERVICE
  * Motor de análise de alterações ambientais
  *
- * CORREÇÕES APLICADAS:
- * 1. Os serviços (areaService, alertService, auditService, copernicusService,
- *    rasterProcessor) deixaram de ser capturados uma única vez em init()
- *    (quando window.app podia ainda não existir/estar completo) e passaram
- *    a ser resolvidos sob demanda via getters que leem window.app no
- *    momento do uso. Isso corrige o bug em que o pipeline REAL nunca era
- *    executado porque copernicusService/rasterProcessor ficavam null.
- * 2. Removida a duplicação de _demoAnalysis()/_generateRandomChange()
- *    (a classe tinha duas definições — a segunda sobrescrevia a primeira
- *    silenciosamente, deixando código morto).
- * 3. Quando as bandas antes/depois têm dimensões diferentes, agora são
- *    de fato recortadas (via RasterProcessor.cropBandTopLeft), em vez de
- *    só reescrever os metadados width/height (o que desalinhava a
- *    indexação pixel a pixel).
- * 4. A AOI (bbox da área) é propagada para loadPairFromSTAC(), permitindo
- *    o recorte por janela de pixels em vez de baixar a cena inteira.
- * 5. NOVO — CORREÇÃO DO BUG "área afetada = quase o máximo possível" em
- *    áreas customizadas: a detecção rodava sobre o retângulo (bbox) que
- *    envolve o polígono da área, não sobre o polígono real desenhado pelo
- *    usuário. Para polígonos irregulares/alongados, o bbox pode ser bem
- *    maior que a área de fato desenhada, então qualquer mudança de NDVI
- *    dentro do bbox — mesmo fora do polígono — era contada como "área
- *    afetada". Agora:
- *      a) é gerada uma máscara do polígono real (RasterProcessor.buildPolygonMask)
- *         e ela é usada para restringir a detecção de mudanças;
- *      b) como segurança extra, a área/percentual afetados relatados nunca
- *         ultrapassam a área real da AOI (area.areaHa), mesmo se a máscara
- *         não puder ser gerada (ex.: proj4 indisponível).
+ * CORREÇÕES APLICADAS (histórico anterior mantido) +
+ * NOVO NESTA VERSÃO:
+ * 6. Busca a imagem "visual" (true color) da mesma cena STAC usada para o
+ *    NDVI, em paralelo com o download das bandas, para permitir comparação
+ *    visual (satélite real) e descarte de falsos-positivos.
+ * 7. Persiste o resultado da análise real (imagens + estatísticas) no
+ *    IndexedDB via ResultImageStore, para reabertura rápida sem reprocessar.
+ * 8. renderResult() ganha uma seção de comparação com a imagem de satélite
+ *    real, quando disponível.
  */
 
 class AnalysisService {
     constructor() {
         this._initialized = false;
         this.analysisInProgress = false;
+        this._lastTrueColor = { before: null, after: null };
     }
 
     /**
@@ -115,6 +97,25 @@ class AnalysisService {
             // Atualiza imagens após análise
             if (window.app?.imageService) {
                 window.app.imageService.updateAfterAnalysis(area.id, result);
+            }
+
+            // NOVO: salva as imagens do resultado localmente (IndexedDB) para
+            // acesso rápido em reavaliação futura, sem precisar reprocessar
+            // ou rebaixar nada. Só faz sentido para análises reais (não demo).
+            if (result.images && !result.isDemo && window.resultImageStore) {
+                window.resultImageStore.save(area.id, {
+                    areaName: area.nome,
+                    status: result.status,
+                    type: result.type,
+                    type_label: result.type_label,
+                    severity: result.severity,
+                    confidence: result.confidence,
+                    previousDate: result.previousDate,
+                    currentDate: result.currentDate,
+                    images: result.images,
+                    stats: result.pipeline?.stats || null
+                }).then(() => window.resultImageStore.cleanup(5))
+                  .catch(e => console.warn('[AnalysisService] Falha ao salvar snapshot:', e));
             }
 
             return result;
@@ -204,6 +205,10 @@ class AnalysisService {
             const pair = await copernicusService.loadPairFromFiles(files);
             before = pair.before;
             after = pair.after || pair.before; // Se só tem 1 cena, compara consigo mesma
+
+            // Upload manual não tem item STAC associado, então não há como
+            // buscar a imagem "visual" (true color) — fica explicitamente nulo.
+            this._lastTrueColor = { before: null, after: null };
         } else if (area.geojson) {
             // Modo STAC: busca imagens pela AOI
             console.log('[AnalysisService] Buscando imagens no Copernicus...');
@@ -232,14 +237,19 @@ class AnalysisService {
             console.log(`[AnalysisService] Antes: ${stacBefore.date} | Depois: ${stacAfter.date}`);
 
             // Carrega bandas em paralelo, recortando pela AOI (bbox) para não
-            // baixar a cena Sentinel-2 inteira.
-            const [beforeBands, afterBands] = await Promise.all([
+            // baixar a cena Sentinel-2 inteira. NOVO: também busca a imagem
+            // "visual" (true color) da mesma cena, para comparação com o NDVI
+            // e descarte de falsos-positivos na UI.
+            const [beforeBands, afterBands, trueColorBefore, trueColorAfter] = await Promise.all([
                 copernicusService.loadPairFromSTAC(stacBefore, bbox),
-                copernicusService.loadPairFromSTAC(stacAfter, bbox)
+                copernicusService.loadPairFromSTAC(stacAfter, bbox),
+                copernicusService.loadTrueColorImage(stacBefore, bbox),
+                copernicusService.loadTrueColorImage(stacAfter, bbox)
             ]);
 
             before = beforeBands;
             after = afterBands;
+            this._lastTrueColor = { before: trueColorBefore, after: trueColorAfter };
         } else {
             console.warn('[AnalysisService] Área sem GeoJSON e sem arquivos. Usando demo.');
             return this._demoAnalysis(area);
@@ -374,7 +384,11 @@ class AnalysisService {
             images: {
                 ndviBefore: ndviBeforeImage,
                 ndviAfter: ndviAfterImage,
-                changeOverlay: changeOverlayImage
+                changeOverlay: changeOverlayImage,
+                // NOVO: imagem de satélite real (true color), quando disponível
+                // (só existe na busca automática via STAC, não em upload manual).
+                trueColorBefore: this._lastTrueColor?.before || null,
+                trueColorAfter: this._lastTrueColor?.after || null
             },
             isDemo: false
         };
@@ -611,6 +625,34 @@ class AnalysisService {
                     </div>
                 </div>
                 ` : ''}
+
+                ${result.images?.trueColorBefore && result.images?.trueColorAfter ? `
+                <div style="background:var(--bg-tertiary);border-radius:8px;padding:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px;">
+                        <div style="font-size:13px;font-weight:600;">🛰️ Verificação com Imagem Real</div>
+                        <span style="font-size:11px;color:var(--text-muted);">Use para descartar falsos positivos</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Satélite — Antes</div>
+                            <img src="${result.images.trueColorBefore}" style="width:100%;border-radius:6px;" alt="Satélite Antes">
+                        </div>
+                        <div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Satélite — Depois</div>
+                            <img src="${result.images.trueColorAfter}" style="width:100%;border-radius:6px;" alt="Satélite Depois">
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;text-align:center;">
+                        <button onclick="window.app?.imageComparator?.open('${area.id}')" class="btn-secondary" style="font-size:13px;">
+                            🔍 Abrir Comparador Deslizante
+                        </button>
+                    </div>
+                </div>
+                ` : (isAlteration ? `
+                <div style="background:rgba(138,155,181,0.05);border:1px dashed var(--border-color);border-radius:8px;padding:12px;font-size:12px;color:var(--text-muted);text-align:center;">
+                    🛰️ Imagem de satélite real não disponível para esta análise (só é obtida na busca automática via STAC, não em upload manual de bandas).
+                </div>
+                ` : '')}
 
                 ${result.pipeline && !result.isDemo ? `
                 <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">

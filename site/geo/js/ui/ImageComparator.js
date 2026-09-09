@@ -1,6 +1,13 @@
 /**
  * IMAGE COMPARATOR UI
  * Comparador antes/depois com slider interativo
+ *
+ * NOVO NESTA VERSÃO:
+ * - open() agora é assíncrono e busca o snapshot real salvo no
+ *   ResultImageStore (IndexedDB), permitindo alternar entre Satélite Real,
+ *   NDVI e a Simulação Visual (fallback demo).
+ * - Botão para marcar o alerta ativo da área como falso positivo direto
+ *   pelo comparador, delegando para App._markFalsePositive().
  */
 
 class ImageComparator {
@@ -8,6 +15,7 @@ class ImageComparator {
         this._initialized = false;
         this.currentAreaId = null;
         this.isComparing = false;
+        this._modes = {};
     }
 
     /**
@@ -20,46 +28,86 @@ class ImageComparator {
     }
 
     /**
-     * Abre o comparador para uma área
-     * @param {string} areaId 
+     * Abre o comparador para uma área. Busca o snapshot real salvo (se
+     * houver) e permite alternar entre Satélite Real, NDVI e a imagem de
+     * simulação (fallback quando não há resultado real salvo).
+     * @param {string} areaId
+     * @param {string|null} preferredMode - 'satellite' | 'ndvi' | 'demo' (opcional)
      */
-    open(areaId) {
+    async open(areaId, preferredMode = null) {
         this.currentAreaId = areaId;
-        
+
         // Verifica se app está disponível
         if (!window.app) {
             console.error('[ImageComparator] App não disponível');
             return;
         }
-        
+
         const area = window.app.areaService?.get(areaId);
         if (!area) {
             window.app._showNotification('⚠️ Erro', 'Área não encontrada.', 'critical');
             return;
         }
 
-        // Verifica se ImageService está disponível
-        if (!window.app.imageService) {
-            window.app._showNotification('⚠️ Erro', 'ImageService não disponível.', 'critical');
+        const snapshot = window.resultImageStore
+            ? await window.resultImageStore.getLatestForArea(areaId)
+            : null;
+
+        const demoImages = window.app.imageService ? window.app.imageService.getImages(areaId) : null;
+
+        const modes = {};
+
+        if (snapshot?.images?.trueColorBefore && snapshot?.images?.trueColorAfter) {
+            modes.satellite = {
+                label: '🛰️ Satélite Real',
+                before: { dataUrl: snapshot.images.trueColorBefore, date: snapshot.previousDate },
+                after: { dataUrl: snapshot.images.trueColorAfter, date: snapshot.currentDate },
+                hasChange: snapshot.status === 'alteracao',
+                changeType: snapshot.type
+            };
+        }
+
+        if (snapshot?.images?.ndviBefore && snapshot?.images?.ndviAfter) {
+            modes.ndvi = {
+                label: '📊 NDVI',
+                before: { dataUrl: snapshot.images.ndviBefore, date: snapshot.previousDate },
+                after: { dataUrl: snapshot.images.ndviAfter, date: snapshot.currentDate },
+                hasChange: snapshot.status === 'alteracao',
+                changeType: snapshot.type
+            };
+        }
+
+        if (demoImages) {
+            modes.demo = {
+                label: '🖼️ Simulação Visual',
+                before: demoImages.before,
+                after: demoImages.after,
+                hasChange: demoImages.hasChange,
+                changeType: demoImages.changeType
+            };
+        }
+
+        if (Object.keys(modes).length === 0) {
+            window.app._showNotification('⚠️ Erro', 'Nenhuma imagem disponível para esta área.', 'critical');
             return;
         }
 
-        const images = window.app.imageService.getImages(areaId);
-        if (!images) {
-            window.app._showNotification('⚠️ Erro', 'Imagens não disponíveis.', 'critical');
-            return;
-        }
+        const activeMode = (preferredMode && modes[preferredMode])
+            ? preferredMode
+            : (modes.satellite ? 'satellite' : (modes.ndvi ? 'ndvi' : 'demo'));
 
-        this._showComparatorModal(area, images);
+        this._modes = modes;
+        this._showComparatorModal(area, modes[activeMode], activeMode);
     }
 
     /**
      * Mostra modal do comparador
      * @param {Object} area 
      * @param {Object} images 
+     * @param {string} activeMode 
      * @private
      */
-    _showComparatorModal(area, images) {
+    _showComparatorModal(area, images, activeMode = 'demo') {
         // Remove modal existente se houver
         const existing = document.getElementById('comparatorModal');
         if (existing) existing.remove();
@@ -79,6 +127,17 @@ class ImageComparator {
         
         const beforeDate = images.before?.date ? new Date(images.before.date).toLocaleDateString('pt-BR') : '--';
         const afterDate = images.after?.date ? new Date(images.after.date).toLocaleDateString('pt-BR') : '--';
+
+        const modeSwitcher = Object.keys(this._modes).length > 1 ? `
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+                ${Object.entries(this._modes).map(([key, m]) => `
+                    <button onclick="window.app?.imageComparator?.open('${area.id}','${key}')"
+                            class="${key === activeMode ? 'btn-primary' : 'btn-secondary'}" style="font-size:12px;">
+                        ${m.label}
+                    </button>
+                `).join('')}
+            </div>
+        ` : '';
 
         modal.innerHTML = `
             <div class="modal-content" style="max-width:900px;">
@@ -105,6 +164,8 @@ class ImageComparator {
                             ` : ''}
                         </div>
                     </div>
+
+                    ${modeSwitcher}
 
                     <!-- Container do comparador -->
                     <div class="comparator-container" style="position:relative;width:100%;max-width:800px;margin:0 auto;border-radius:8px;overflow:hidden;border:1px solid var(--border-color);">
@@ -201,6 +262,10 @@ class ImageComparator {
                         <button onclick="window.app?._generateReport();document.getElementById('comparatorModal')?.remove();" 
                                 class="btn-secondary" style="font-size:13px;">
                             📄 Gerar Relatório
+                        </button>
+                        <button onclick="window.app?._markFalsePositive('${area.id}');document.getElementById('comparatorModal')?.remove();" 
+                                class="btn-secondary" style="font-size:13px;color:var(--text-muted);">
+                            ❌ Marcar como Falso Positivo
                         </button>
                         ` : ''}
                         <button onclick="document.getElementById('comparatorModal')?.remove();" 
