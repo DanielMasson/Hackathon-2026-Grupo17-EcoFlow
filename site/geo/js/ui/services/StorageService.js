@@ -39,8 +39,7 @@ _loadDemoData() {
     if (typeof DEMO_DATA !== 'undefined') {
         this.saveAreas(DEMO_DATA.areas || []);
         this.saveAlerts(DEMO_DATA.alerts || []);
-        // Usa 'historico' em vez de 'history'
-        this.saveHistory(DEMO_DATA.historico || []);
+        this.saveHistory(DEMO_DATA.history || []);
         console.log('[StorageService] Dados de demonstração carregados');
     } else {
         console.warn('[StorageService] DEMO_DATA não encontrado');

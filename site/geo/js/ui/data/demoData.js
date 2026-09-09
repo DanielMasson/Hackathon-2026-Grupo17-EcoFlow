@@ -48,7 +48,7 @@ const DEMO_DATA = {
                 previousDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
                 currentDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
             },
-            historico: [] // Renomeado de 'history' para 'historico'
+            history: []
         },
         {
             id: 'AREA_002',
@@ -93,7 +93,7 @@ const DEMO_DATA = {
                 previousDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
                 currentDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
             },
-            historico: []
+            history: []
         },
         {
             id: 'AREA_003',
@@ -138,7 +138,7 @@ const DEMO_DATA = {
                 previousDate: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
                 currentDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
             },
-            historico: []
+            history: []
         },
         {
             id: 'AREA_004',
@@ -183,7 +183,7 @@ const DEMO_DATA = {
                 previousDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
                 currentDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
             },
-            historico: []
+            history: []
         }
     ],
     
@@ -253,7 +253,7 @@ const DEMO_DATA = {
         }
     ],
     
-    historico: [ // Renomeado de 'history' para 'historico'
+    history: [
         {
             id: 'HIST_001',
             areaId: 'AREA_002',

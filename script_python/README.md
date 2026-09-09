@@ -8,7 +8,7 @@ funciona antes de conectar a fonte de imagem real.
 ## Como rodar
 
 ```bash
-pip install numpy scipy scikit-image matplotlib
+pip install numpy scipy scikit-image matplotlib rasterio
 python3 main.py
 ```
 

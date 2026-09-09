@@ -91,15 +91,6 @@ class App {
         this.timeline = new Timeline();
         this.timeline.init();
         
-        // Inicializa mapa
-        try {
-            this.mapService = new MapService('mainMap');
-            this.mapService.init();
-        } catch (e) {
-            console.error('❌ Erro ao inicializar mapa:', e);
-            this._showNotification('⚠️ Erro', 'Erro ao inicializar o mapa. Verifique o console.', 'critical');
-        }
-        
         // Carrega dados
         this._loadData();
         
@@ -143,6 +134,24 @@ class App {
             areas.forEach(area => {
                 this.imageService.generateForArea(area);
             });
+        }
+    }
+
+    /**
+     * Atualiza dados no mapa
+     * @private
+     */
+    _updateMapData() {
+        if (!this.mapService || !this.mapService._initialized) return;
+        
+        const areas = this.areaService ? this.areaService.getAll() : [];
+        const alerts = this.alertService ? this.alertService.getAll() : [];
+        
+        try {
+            this.mapService.updateAreas(areas);
+            this.mapService.updateAlerts(alerts);
+        } catch (e) {
+            console.warn('Erro ao atualizar dados do mapa:', e);
         }
     }
 
@@ -191,7 +200,7 @@ class App {
         }
         
         // Mapa
-        if (this.mapService) {
+        if (this.mapService && this.mapService._initialized) {
             try {
                 this.mapService.updateAreas(areas);
                 this.mapService.updateAlerts(alerts);
@@ -357,13 +366,6 @@ class App {
             });
         });
 
-        // Filtro de histórico
-        document.getElementById('historyAreaFilter')?.addEventListener('change', (e) => {
-            if (this.timeline) {
-                this.timeline.filter(e.target.value);
-            }
-        });
-
         // Configurar Copernicus
         document.getElementById('configureCopernicusBtn')?.addEventListener('click', () => {
             this._showNotification(
@@ -415,15 +417,33 @@ class App {
             this.currentView = view;
         }
 
-        // Se for mapa, atualiza tamanho
-        if (view === 'map' && this.mapService) {
-            setTimeout(() => {
-                try {
-                    this.mapService.invalidateSize();
-                } catch (e) {
-                    console.warn('Erro ao invalidar tamanho do mapa:', e);
-                }
-            }, 100);
+        // Se for mapa, inicializa se necessário e atualiza tamanho
+        if (view === 'map') {
+            this._initMapIfNeeded();
+        }
+    }
+
+    /**
+     * Inicializa o mapa na primeira vez que o mapa é exibido
+     * @private
+     */
+    _initMapIfNeeded() {
+        if (this.mapService && this.mapService._initialized) {
+            // Mapa já inicializado, apenas invalida tamanho
+            requestAnimationFrame(() => {
+                this.mapService.invalidateSize();
+            });
+        } else {
+            // Primeira vez: cria o mapa agora que o container está visível
+            try {
+                this.mapService = new MapService('mainMap');
+                this.mapService.init();
+                // Atualiza dados no mapa após criação
+                this._updateMapData();
+            } catch (e) {
+                console.error('❌ Erro ao inicializar mapa:', e);
+                this._showNotification('⚠️ Erro', 'Erro ao inicializar o mapa. Verifique o console.', 'critical');
+            }
         }
     }
 

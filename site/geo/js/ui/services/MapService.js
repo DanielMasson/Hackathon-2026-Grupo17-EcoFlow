@@ -44,13 +44,12 @@ class MapService {
             minZoom: APP_CONFIG.MAP.MIN_ZOOM
         }).addTo(this.map);
 
-        // Camada de satélite (placeholder)
+        // Camada de satélite (ESRI World Imagery - gratuito)
         this.satelliteLayer = L.tileLayer(
-            'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             {
-                maxZoom: 20,
-                subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-                attribution: 'Google Satélite'
+                maxZoom: 19,
+                attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
             }
         );
 
@@ -64,9 +63,6 @@ class MapService {
 
         // Eventos
         this._bindEvents();
-
-        // Atualiza tamanho
-        setTimeout(() => this.invalidateSize(), 100);
 
         this._initialized = true;
         console.log('[MapService] Mapa inicializado');
@@ -161,6 +157,7 @@ class MapService {
      * @param {Array} areas 
      */
     updateAreas(areas) {
+        if (!this._initialized) return;
         this.areasLayer.clearLayers();
         this.areaMarkers = [];
 
@@ -260,6 +257,7 @@ class MapService {
      * @param {Array} alerts 
      */
     updateAlerts(alerts) {
+        if (!this._initialized) return;
         this.alertsLayer.clearLayers();
         this.alertMarkers = [];
 
@@ -390,6 +388,7 @@ class MapService {
      * @param {Array} changes 
      */
     updateChanges(changes) {
+        if (!this._initialized) return;
         this.changesLayer.clearLayers();
 
         if (!changes || changes.length === 0) return;
@@ -450,7 +449,7 @@ class MapService {
      */
     invalidateSize() {
         if (this.map) {
-            setTimeout(() => this.map.invalidateSize(), 100);
+            this.map.invalidateSize();
         }
     }
 
@@ -458,6 +457,7 @@ class MapService {
      * Limpa todas as camadas
      */
     clearAll() {
+        if (!this._initialized) return;
         this.areasLayer.clearLayers();
         this.alertsLayer.clearLayers();
         this.changesLayer.clearLayers();

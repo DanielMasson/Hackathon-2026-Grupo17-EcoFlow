@@ -108,7 +108,7 @@ class AreaPanel {
                 </div>
                 
                 ${area.descricao ? `
-                <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;padding:8px 0;border-top:1px solid var(--border-color);">
+                <div class="area-description" style="font-size:12px;color:var(--text-secondary);margin-top:8px;padding:8px 0;border-top:1px solid var(--border-color);">
                     ${area.descricao}
                 </div>
                 ` : ''}
