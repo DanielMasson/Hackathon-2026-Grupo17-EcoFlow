@@ -18,6 +18,18 @@
  *    indexação pixel a pixel).
  * 4. A AOI (bbox da área) é propagada para loadPairFromSTAC(), permitindo
  *    o recorte por janela de pixels em vez de baixar a cena inteira.
+ * 5. NOVO — CORREÇÃO DO BUG "área afetada = quase o máximo possível" em
+ *    áreas customizadas: a detecção rodava sobre o retângulo (bbox) que
+ *    envolve o polígono da área, não sobre o polígono real desenhado pelo
+ *    usuário. Para polígonos irregulares/alongados, o bbox pode ser bem
+ *    maior que a área de fato desenhada, então qualquer mudança de NDVI
+ *    dentro do bbox — mesmo fora do polígono — era contada como "área
+ *    afetada". Agora:
+ *      a) é gerada uma máscara do polígono real (RasterProcessor.buildPolygonMask)
+ *         e ela é usada para restringir a detecção de mudanças;
+ *      b) como segurança extra, a área/percentual afetados relatados nunca
+ *         ultrapassam a área real da AOI (area.areaHa), mesmo se a máscara
+ *         não puder ser gerada (ex.: proj4 indisponível).
  */
 
 class AnalysisService {
@@ -258,6 +270,25 @@ class AnalysisService {
             };
         }
 
+        // CORREÇÃO PRINCIPAL: restringe a detecção ao polígono real da área
+        // (AOI), não ao retângulo (bbox) que a envolve. Sem isso, qualquer
+        // mudança de NDVI dentro do bbox baixado — mesmo fora do desenho do
+        // usuário — era contabilizada como "área afetada", fazendo análises
+        // de áreas customizadas (formato irregular/alongado) reportarem
+        // quase o máximo de hectares possível (o bbox inteiro), em vez de
+        // só a área realmente selecionada.
+        let polygonMask = null;
+        if (area.geojson) {
+            try {
+                polygonMask = rasterProcessor.buildPolygonMask(area.geojson, before.geoKeys, before.width, before.height);
+                if (!polygonMask) {
+                    console.warn('[AnalysisService] Não foi possível gerar a máscara do polígono (ex.: proj4 indisponível para o CRS da cena) — detecção usará o bbox inteiro, mas o resultado final ainda será limitado à área real da AOI.');
+                }
+            } catch (e) {
+                console.warn('[AnalysisService] Erro ao gerar máscara do polígono, detecção usará o bbox inteiro:', e);
+            }
+        }
+
         // Processa pipeline NDVI + detecção
         const threshold = options.threshold || APP_CONFIG.ANALYSIS.DETECTION.THRESHOLD;
         const minArea = options.minArea || APP_CONFIG.ANALYSIS.DETECTION.MIN_AREA_PIXELS;
@@ -270,7 +301,7 @@ class AnalysisService {
             width: before.width,
             height: before.height,
             geoKeys: before.geoKeys,
-            options: { threshold, minArea }
+            options: { threshold, minArea, mask: polygonMask }
         });
 
         // Renderiza NDVI como canvas para UI
@@ -298,6 +329,21 @@ class AnalysisService {
         // então regions[0] é de fato a maior alteração, não a primeira
         // encontrada na varredura raster.
         const mainRegion = detection.regions.length > 0 ? detection.regions[0] : null;
+        const rawAffectedAreaHa = mainRegion ? mainRegion.areaHa : 0;
+
+        // CORREÇÃO (segurança extra): mesmo com a máscara do polígono
+        // aplicada acima, nunca reporta área afetada maior que a própria
+        // área desenhada pelo usuário (area.areaHa, calculada pelo turf no
+        // momento do desenho). Isso cobre o caso em que a máscara não pôde
+        // ser gerada (ex.: proj4 ausente) e a detecção caiu de volta para
+        // o bbox inteiro — evita voltar a mostrar "quase o máximo possível"
+        // de hectares para uma área pequena.
+        const affectedAreaHa = area.areaHa
+            ? Math.min(rawAffectedAreaHa, area.areaHa)
+            : rawAffectedAreaHa;
+        const affectedPercentage = area.areaHa
+            ? Math.min(100, (affectedAreaHa / area.areaHa) * 100)
+            : Math.min(100, detection.stats.changedPercentage);
 
         const result = {
             status: classif.type === 'normal' ? 'normal' : 'alteracao',
@@ -305,8 +351,8 @@ class AnalysisService {
             type_label: classif.typeLabel,
             severity: classif.severity,
             confidence: classif.confidence,
-            affectedAreaHa: mainRegion ? mainRegion.areaHa : 0,
-            affectedPercentage: detection.stats.changedPercentage,
+            affectedAreaHa: affectedAreaHa,
+            affectedPercentage: affectedPercentage,
             previousDate: before.date || options.startDate || null,
             currentDate: after.date || options.endDate || null,
             indices: {
@@ -322,7 +368,8 @@ class AnalysisService {
                 stats: detection.stats,
                 regions: detection.regions,
                 ndviBeforeStats: pipelineResult.ndviBeforeStats,
-                ndviAfterStats: pipelineResult.ndviAfterStats
+                ndviAfterStats: pipelineResult.ndviAfterStats,
+                usedPolygonMask: !!polygonMask
             },
             images: {
                 ndviBefore: ndviBeforeImage,
@@ -348,9 +395,9 @@ class AnalysisService {
         let result;
 
         if (currentStatus === 'normal' && shouldChange) {
-            result = this._generateRandomChange();
+            result = this._generateRandomChange(area);
         } else if (currentStatus === 'alteracao' && shouldChange) {
-            result = this._generateRandomChange();
+            result = this._generateRandomChange(area);
         } else {
             result = {
                 status: currentStatus,
@@ -378,11 +425,18 @@ class AnalysisService {
     }
 
     /**
-     * Gera uma alteração aleatória para demonstração
+     * Gera uma alteração aleatória para demonstração.
+     *
+     * CORREÇÃO: a área afetada simulada agora é limitada à área real da
+     * AOI (area.areaHa) quando disponível, em vez de sortear um valor fixo
+     * (5–40 ha) que pode ultrapassar áreas customizadas pequenas — o mesmo
+     * princípio de "nunca reportar mais área afetada do que a área
+     * desenhada" aplicado também ao modo demonstração, para consistência.
+     * @param {Object} area
      * @returns {Object}
      * @private
      */
-    _generateRandomChange() {
+    _generateRandomChange(area = null) {
         const types = [
             { type: 'possivel_desmatamento', severity: 'alta', minArea: 5, maxArea: 30 },
             { type: 'possivel_queimada', severity: 'alta', minArea: 8, maxArea: 40 },
@@ -392,9 +446,19 @@ class AnalysisService {
         ];
 
         const selected = types[Math.floor(Math.random() * types.length)];
-        const areaHa = selected.minArea + Math.random() * (selected.maxArea - selected.minArea);
+        let areaHa = selected.minArea + Math.random() * (selected.maxArea - selected.minArea);
+
+        // Nunca simula mais área afetada do que a área total desenhada.
+        const totalAreaHa = area?.areaHa || null;
+        if (totalAreaHa) {
+            areaHa = Math.min(areaHa, totalAreaHa * 0.9); // até 90% da área, nunca 100%+
+        }
+
         const confidence = 0.75 + Math.random() * 0.2;
         const ndviChange = -(0.1 + Math.random() * 0.3);
+        const affectedPercentage = totalAreaHa
+            ? Math.min(100, (areaHa / totalAreaHa) * 100)
+            : areaHa / (1000 + Math.random() * 2000) * 100;
 
         return {
             status: selected.type === 'normal' ? 'normal' : 'alteracao',
@@ -403,7 +467,7 @@ class AnalysisService {
             severity: selected.severity,
             confidence: Math.min(confidence, 0.98),
             affectedAreaHa: areaHa,
-            affectedPercentage: areaHa / (1000 + Math.random() * 2000) * 100,
+            affectedPercentage: affectedPercentage,
             previousDate: this._getDateDaysAgo(10 + Math.floor(Math.random() * 10)),
             currentDate: this._getDateDaysAgo(1 + Math.floor(Math.random() * 5)),
             indices: {
@@ -553,11 +617,12 @@ class AnalysisService {
                     <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Estatísticas do Pipeline</div>
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;font-size:12px;">
                         <div>Dimensão: ${result.pipeline.stats.width}x${result.pipeline.stats.height}</div>
-                        <div>Total pixels: ${result.pipeline.stats.totalPixels.toLocaleString()}</div>
+                        <div>Total pixels (AOI): ${result.pipeline.stats.totalPixels.toLocaleString()}</div>
                         <div>Alterados: ${result.pipeline.stats.totalChangedPixels.toLocaleString()}</div>
                         <div>% Alterado: ${result.pipeline.stats.changedPercentage.toFixed(3)}%</div>
                         <div>Regiões: ${result.pipeline.stats.numRegions}</div>
                         <div>Threshold: ${result.pipeline.stats.threshold}</div>
+                        <div>Máscara do polígono: ${result.pipeline.usedPolygonMask ? '✅ aplicada' : '⚠️ não aplicada (usou bbox)'}</div>
                     </div>
                 </div>
                 ` : ''}

@@ -12,6 +12,16 @@
  *    dimensões diferentes, o corte agora recorta de fato os dados (respeitando
  *    o stride original), em vez de só reescrever os metadados width/height
  *    — o que antes desalinhava a indexação pixel a pixel.
+ * 3. NOVO — buildPolygonMask() / geoToPixel(): antes, a detecção de mudanças
+ *    rodava sobre TODO o retângulo (bbox) baixado para a AOI, não sobre o
+ *    polígono real desenhado pelo usuário. Para áreas customizadas com
+ *    formato irregular/alongado, o bbox pode ser bem maior que o polígono,
+ *    então qualquer alteração de NDVI fora do desenho (mas dentro do bbox)
+ *    era contada como "área afetada" — o que fazia análises de áreas
+ *    customizadas reportarem quase o máximo possível de hectares, mesmo
+ *    quando só uma fração pequena do polígono mudou de fato. Agora
+ *    detectChanges()/processBands() aceitam uma máscara opcional que
+ *    restringe a contagem só aos pixels dentro do polígono.
  */
 
 class RasterProcessor {
@@ -271,7 +281,7 @@ class RasterProcessor {
     }
 
     // ========================================================================
-    // 5. CONVERSÃO PIXEL → COORDENADA GEOGRÁFICA
+    // 5. CONVERSÃO PIXEL ↔ COORDENADA GEOGRÁFICA
     // ========================================================================
 
     /**
@@ -365,6 +375,155 @@ class RasterProcessor {
     }
 
     /**
+     * Reprojeta um ponto de WGS84 para um CRS projetado (inverso de
+     * _reprojectToWGS84). Necessário para converter os vértices do polígono
+     * da AOI (sempre em WGS84 no GeoJSON) para o CRS nativo do GeoTIFF antes
+     * de calcular a posição em pixel.
+     * @param {number} lon
+     * @param {number} lat
+     * @param {number} epsg
+     * @returns {{x:number, y:number}|null}
+     * @private
+     */
+    _reprojectFromWGS84(lon, lat, epsg) {
+        if (typeof window === 'undefined' || typeof window.proj4 === 'undefined') {
+            return null;
+        }
+        try {
+            const proj4 = window.proj4;
+            const dstDef = `EPSG:${epsg}`;
+            if (!proj4.defs(dstDef)) {
+                const utmMatch = /^EPSG:32(6|7)(\d{2})$/.exec(dstDef);
+                if (utmMatch) {
+                    const hemisphere = utmMatch[1] === '6' ? 'north' : 'south';
+                    const zone = parseInt(utmMatch[2], 10);
+                    proj4.defs(dstDef, `+proj=utm +zone=${zone} +${hemisphere === 'south' ? 'south ' : ''}+datum=WGS84 +units=m +no_defs`);
+                }
+            }
+            const [x, y] = proj4('EPSG:4326', dstDef, [lon, lat]);
+            return { x, y };
+        } catch (e) {
+            console.warn('[RasterProcessor] Falha ao reprojetar coordenada (WGS84 → CRS nativo):', e);
+            return null;
+        }
+    }
+
+    /**
+     * Converte lat/lon (WGS84) para pixel (row, col) — inverso de pixelToGeo().
+     * @param {number} lat
+     * @param {number} lon
+     * @param {Object} geoKeys - { originLon, originLat, resX, resY, epsg }
+     * @returns {{row:number, col:number}|null}
+     */
+    geoToPixel(lat, lon, geoKeys) {
+        if (!geoKeys) return null;
+        const { originLon, originLat, resX, resY, epsg } = geoKeys;
+
+        let x = lon, y = lat;
+        if (epsg && epsg !== 4326) {
+            const projected = this._reprojectFromWGS84(lon, lat, epsg);
+            if (!projected) return null; // sem proj4 — não é seguro converter
+            x = projected.x;
+            y = projected.y;
+        }
+
+        const col = (x - originLon) / resX;
+        const row = (originLat - y) / Math.abs(resY);
+        return { row, col };
+    }
+
+    /**
+     * Rasteriza o polígono da AOI (GeoJSON, WGS84) em uma máscara binária do
+     * tamanho do raster carregado (width x height).
+     *
+     * CORREÇÃO PRINCIPAL DESTA VERSÃO: antes, a detecção de mudanças rodava
+     * sobre TODO o retângulo (bbox) baixado para a AOI — não sobre o
+     * polígono real desenhado pelo usuário. Para áreas customizadas com
+     * formato irregular/alongado, o bbox pode ser bem maior que o polígono,
+     * então qualquer alteração de NDVI fora do desenho (mas dentro do bbox)
+     * era contada como "área afetada", fazendo a análise reportar quase o
+     * máximo de hectares possível mesmo quando só uma fração do polígono
+     * mudou de fato. Esta máscara restringe a detecção só aos pixels dentro
+     * do polígono.
+     *
+     * Suporta Polygon e MultiPolygon (com furos), via regra par-ímpar
+     * (even-odd) combinando as arestas de todos os anéis.
+     * @param {Object} geojson - Feature ou geometry GeoJSON (Polygon/MultiPolygon)
+     * @param {Object} geoKeys
+     * @param {number} width
+     * @param {number} height
+     * @returns {Uint8Array|null} 1 = dentro do polígono, 0 = fora. null se não for possível rasterizar.
+     */
+    buildPolygonMask(geojson, geoKeys, width, height) {
+        if (!geojson || !geoKeys) return null;
+
+        const geometry = geojson.type === 'Feature' ? geojson.geometry : geojson;
+        if (!geometry) return null;
+
+        let polygons;
+        if (geometry.type === 'Polygon') {
+            polygons = [geometry.coordinates];
+        } else if (geometry.type === 'MultiPolygon') {
+            polygons = geometry.coordinates;
+        } else {
+            console.warn('[RasterProcessor] Geometria não suportada para máscara:', geometry.type);
+            return null;
+        }
+
+        // Converte todos os anéis (exterior + furos) para coordenadas de pixel.
+        const pixelRings = [];
+        for (const polygon of polygons) {
+            for (const ring of polygon) {
+                const pixelRing = [];
+                for (const [lon, lat] of ring) {
+                    const p = this.geoToPixel(lat, lon, geoKeys);
+                    if (!p) return null; // reprojeção indisponível — não mascara às cegas
+                    pixelRing.push(p);
+                }
+                if (pixelRing.length >= 3) pixelRings.push(pixelRing);
+            }
+        }
+
+        if (pixelRings.length === 0) return null;
+
+        const mask = new Uint8Array(width * height);
+
+        // Preenchimento por varredura de linhas (scanline), regra par-ímpar
+        // combinando arestas de TODOS os anéis — isso já trata furos
+        // corretamente sem precisar identificar qual anel é externo/interno.
+        for (let y = 0; y < height; y++) {
+            const scanY = y + 0.5;
+            const xs = [];
+
+            for (const ring of pixelRings) {
+                for (let i = 0; i < ring.length; i++) {
+                    const p1 = ring[i];
+                    const p2 = ring[(i + 1) % ring.length];
+                    const y1 = p1.row, y2 = p2.row;
+                    if (y1 === y2) continue; // aresta horizontal, ignora
+                    if ((scanY >= y1 && scanY < y2) || (scanY >= y2 && scanY < y1)) {
+                        const t = (scanY - y1) / (y2 - y1);
+                        const x = p1.col + t * (p2.col - p1.col);
+                        xs.push(x);
+                    }
+                }
+            }
+
+            xs.sort((a, b) => a - b);
+
+            for (let i = 0; i + 1 < xs.length; i += 2) {
+                const xStart = Math.max(0, Math.round(xs[i]));
+                const xEnd = Math.min(width - 1, Math.round(xs[i + 1]) - 1);
+                for (let x = xStart; x <= xEnd; x++) {
+                    mask[y * width + x] = 1;
+                }
+            }
+        }
+
+        return mask;
+    }
+
+    /**
      * Converte pixel para coordenada usando formato simplificado (demo).
      * Equivalente a detect_changes.pixel_para_coordenada()
      * @param {number} row
@@ -393,13 +552,18 @@ class RasterProcessor {
      * @param {Float32Array} ndviAfter
      * @param {number} width
      * @param {number} height
-     * @param {Object} opts - { threshold, minArea, geoKeys }
+     * @param {Object} opts - { threshold, minArea, geoKeys, mask }
      * @returns {{ mask: Uint8Array, regions: Array, stats: Object }}
      */
     detectChanges(ndviBefore, ndviAfter, width, height, opts = {}) {
         const threshold = opts.threshold || 0.15;
         const minArea = opts.minArea || 20;
         const geoKeys = opts.geoKeys || null;
+        // NOVO: máscara opcional (1 = dentro do polígono da AOI, 0 = fora).
+        // Quando fornecida, restringe a detecção de mudanças ao polígono
+        // real desenhado pelo usuário, em vez de considerar todo o bbox
+        // retangular baixado ao redor dele.
+        const aoiMask = opts.mask || null;
 
         // 1. Diferença: positivo = perda de vegetação
         const diff = new Float32Array(width * height);
@@ -408,9 +572,15 @@ class RasterProcessor {
         }
 
         // 2. Limiarização
+        // CORREÇÃO: só marca como "mudança" pixels que também estejam dentro
+        // do polígono da AOI (aoiMask), quando uma máscara é fornecida — sem
+        // isso, mudanças de NDVI fora do desenho do usuário (mas dentro do
+        // bbox retangular baixado) eram contabilizadas como parte da área
+        // afetada, inflando o resultado para áreas customizadas.
         const binary = new Uint8Array(width * height);
         for (let i = 0; i < binary.length; i++) {
-            binary[i] = diff[i] > threshold ? 1 : 0;
+            const insideAOI = !aoiMask || aoiMask[i] === 1;
+            binary[i] = (diff[i] > threshold && insideAOI) ? 1 : 0;
         }
 
         // 3. Abertura morfológica (remove ruído)
@@ -447,7 +617,18 @@ class RasterProcessor {
 
         // 6. Estatísticas gerais
         const totalChangedPixels = filtered.reduce((s, r) => s + r.areaPixels, 0);
-        const totalPixels = width * height;
+        // CORREÇÃO: quando há máscara de AOI, o "total de pixels" considerado
+        // para o cálculo de percentual passa a ser só os pixels DENTRO do
+        // polígono, não o retângulo (bbox) inteiro — assim "% da área
+        // alterada" reflete a área real desenhada, não o bbox ao redor dela.
+        let totalPixels = width * height;
+        if (aoiMask) {
+            totalPixels = 0;
+            for (let i = 0; i < aoiMask.length; i++) {
+                if (aoiMask[i] === 1) totalPixels++;
+            }
+            if (totalPixels === 0) totalPixels = width * height; // fallback de segurança
+        }
 
         return {
             mask: cleaned,
@@ -483,7 +664,7 @@ class RasterProcessor {
      * @param {number} params.width
      * @param {number} params.height
      * @param {Object|null} params.geoKeys - affine transform para conversão pixel→geo
-     * @param {Object} params.options - { threshold, minArea }
+     * @param {Object} params.options - { threshold, minArea, mask }
      * @returns {Object} resultado completo da análise
      */
     processBands(params) {
@@ -506,11 +687,12 @@ class RasterProcessor {
         const ndviBeforeStats = this._arrayStats(ndviBefore);
         const ndviAfterStats = this._arrayStats(ndviAfter);
 
-        // 3. Detecta mudanças
+        // 3. Detecta mudanças (repassa a máscara da AOI, se houver)
         const detection = this.detectChanges(ndviBefore, ndviAfter, width, height, {
             threshold,
             minArea,
-            geoKeys
+            geoKeys,
+            mask: options.mask || null
         });
 
         // 4. Classifica severidade
