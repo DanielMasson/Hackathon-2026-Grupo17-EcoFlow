@@ -248,7 +248,50 @@
                         </select>
                         <button class="btn-primary" id="runAnalysisBtn">🔍 Analisar Área</button>
                     </div>
-                    
+
+                    <div id="sceneDateSelector" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-top:12px;">
+                        <div style="font-weight:600;font-size:14px;margin-bottom:12px;">📅 Seleção de Datas (Antes/Depois)</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+                            Por padrão, o sistema compara a cena mais antiga com a mais recente encontrada nos últimos 60 dias.
+                            Para controlar exatamente quais datas comparar, defina o período de busca abaixo e escolha as cenas manualmente
+                            (aplica-se apenas à busca automática via Copernicus/STAC — não ao upload manual de bandas).
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Buscar a partir de</label>
+                                <input type="date" id="analysisStartDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Buscar até</label>
+                                <input type="date" id="analysisEndDate">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Nuvens máx. (%)</label>
+                                <input type="number" id="analysisMaxCloud" min="0" max="100" value="20">
+                            </div>
+                            <div class="form-group" style="display:flex;align-items:flex-end;">
+                                <button class="btn-secondary" id="searchScenesBtn" style="width:100%;">🔍 Buscar Cenas Disponíveis</button>
+                            </div>
+                        </div>
+                        <div id="sceneSearchStatus" style="font-size:12px;color:var(--text-muted);margin:8px 0 12px;"></div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Imagem Anterior (Antes)</label>
+                                <select id="sceneBeforeSelect">
+                                    <option value="">-- Automático (mais antiga) --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Imagem Atual (Depois)</label>
+                                <select id="sceneAfterSelect">
+                                    <option value="">-- Automático (mais recente) --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="bandUploadSection" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-top:12px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                             <div style="font-weight:600;font-size:14px;">🛰️ Bandas Sentinel-2 (Opcional)</div>
@@ -559,19 +602,12 @@
     <script src="js/ui/services/AnalysisService.js"></script>
     <script src="js/ui/services/ReportService.js"></script>
     <script src="js/ui/services/MapService.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
-    <!-- Turf.js -->
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-
-    <!-- Proj4js — reprojeção UTM ↔ WGS84, necessário para:
-        1) recortar o download da cena Sentinel-2 pela janela da AOI (CopernicusService._bboxToPixelWindow)
-        2) restringir a detecção de mudanças ao polígono real desenhado, não ao bbox (RasterProcessor.buildPolygonMask) -->
+    <!-- Proj4js — reprojeção UTM ↔ WGS84 (usado por CopernicusService e RasterProcessor).
+        NÃO recarregar leaflet.js aqui: Leaflet + Leaflet Draw já foram carregados uma única
+        vez no <head>. Recarregar leaflet.js sobrescreve window.L com uma instância nova,
+        sem L.Control.Draw/L.Draw (anexados pelo plugin leaflet-draw ao L original). -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
-
-    <!-- Leaflet JS (CARREGAR PRIMEIRO) -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <!-- 3. UI -->
     <script src="js/ui/Dashboard.js"></script>

@@ -378,6 +378,11 @@ class App {
             this._runAnalysis();
         });
 
+        // Busca manual de cenas Sentinel-2 disponíveis (seleção de datas)
+        document.getElementById('searchScenesBtn')?.addEventListener('click', () => {
+            this._searchAvailableScenes();
+        });
+
         // Upload de bandas — detecta arquivos selecionados
         ['fileRedBefore', 'fileNirBefore', 'fileRedAfter', 'fileNirAfter'].forEach(id => {
             document.getElementById(id)?.addEventListener('change', () => {
@@ -895,6 +900,89 @@ class App {
     }
 
     /**
+     * Busca cenas Sentinel-2 disponíveis via STAC para a área selecionada,
+     * dentro do período informado, e popula os selects de "Imagem Anterior" /
+     * "Imagem Atual" para que o usuário escolha manualmente quais datas
+     * comparar, em vez de depender sempre da mais antiga/mais recente
+     * escolhidas automaticamente pelo pipeline.
+     * @private
+     */
+    async _searchAvailableScenes() {
+        const areaSelect = document.getElementById('analysisAreaSelect');
+        const areaId = areaSelect?.value;
+        const statusEl = document.getElementById('sceneSearchStatus');
+        const beforeSelect = document.getElementById('sceneBeforeSelect');
+        const afterSelect = document.getElementById('sceneAfterSelect');
+
+        if (!areaId) {
+            this._showNotification('⚠️ Aviso', 'Selecione uma área antes de buscar cenas.', 'medium');
+            return;
+        }
+
+        const area = this.areaService?.get(areaId);
+        if (!area || !area.geojson) {
+            this._showNotification('⚠️ Erro', 'A área selecionada não possui geometria (GeoJSON) definida.', 'critical');
+            return;
+        }
+
+        if (!this.copernicusService) {
+            this._showNotification('⚠️ Aviso', 'Busca de cenas só está disponível em modo REAL (Copernicus).', 'medium');
+            return;
+        }
+
+        const startDate = document.getElementById('analysisStartDate')?.value
+            || new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+        const endDate = document.getElementById('analysisEndDate')?.value
+            || new Date().toISOString().slice(0, 10);
+        const maxCloud = parseInt(document.getElementById('analysisMaxCloud')?.value, 10) || 20;
+
+        if (statusEl) statusEl.textContent = '⏳ Buscando cenas disponíveis...';
+        if (beforeSelect) beforeSelect.innerHTML = '<option value="">-- Buscando --</option>';
+        if (afterSelect) afterSelect.innerHTML = '<option value="">-- Buscando --</option>';
+
+        try {
+            const bbox = this.copernicusService.geojsonToBBox(area.geojson);
+            const result = await this.copernicusService.search({
+                bbox, startDate, endDate, maxCloud, limit: 20
+            });
+
+            // Guarda os itens STAC completos para reuso em _runAnalysis()
+            this._scannedScenes = {};
+            result.items.forEach(item => { this._scannedScenes[item.id] = item; });
+
+            const sorted = [...result.items].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            if (sorted.length === 0) {
+                if (statusEl) statusEl.textContent = '⚠️ Nenhuma cena encontrada nesse período/filtro de nuvens.';
+                if (beforeSelect) beforeSelect.innerHTML = '<option value="">-- Nenhuma cena encontrada --</option>';
+                if (afterSelect) afterSelect.innerHTML = '<option value="">-- Nenhuma cena encontrada --</option>';
+                return;
+            }
+
+            const optionsHtml = sorted.map(item =>
+                `<option value="${item.id}">${item.date} • ☁️ ${item.cloudCover ?? '--'}%</option>`
+            ).join('');
+
+            if (beforeSelect) {
+                beforeSelect.innerHTML = optionsHtml;
+                beforeSelect.value = sorted[0].id;
+            }
+            if (afterSelect) {
+                afterSelect.innerHTML = optionsHtml;
+                afterSelect.value = sorted[sorted.length - 1].id;
+            }
+
+            if (statusEl) {
+                statusEl.textContent = `✅ ${sorted.length} cena(s) encontrada(s) entre ${startDate} e ${endDate}. Ajuste os seletores abaixo, se quiser.`;
+            }
+        } catch (e) {
+            console.error('Erro ao buscar cenas disponíveis:', e);
+            if (statusEl) statusEl.textContent = '❌ Erro ao buscar cenas. Veja o console para detalhes.';
+            this._showNotification('⚠️ Erro', 'Falha ao buscar cenas disponíveis.', 'critical');
+        }
+    }
+
+    /**
      * Executa análise da área selecionada
      * @private
      */
@@ -945,8 +1033,29 @@ class App {
             const options = {};
             if (useRealData) {
                 options.files = uploadedFiles;
+            } else {
+                // Período/nuvens de busca manual (se preenchidos)
+                const startDate = document.getElementById('analysisStartDate')?.value;
+                const endDate = document.getElementById('analysisEndDate')?.value;
+                const maxCloud = document.getElementById('analysisMaxCloud')?.value;
+                if (startDate) options.startDate = startDate;
+                if (endDate) options.endDate = endDate;
+                if (maxCloud) options.maxCloud = parseInt(maxCloud, 10);
+
+                // Cenas específicas escolhidas manualmente pelo usuário via
+                // "Buscar Cenas Disponíveis" — se ambas estiverem selecionadas,
+                // o AnalysisService usa exatamente essas datas em vez de escolher
+                // automaticamente a mais antiga/mais recente.
+                const beforeId = document.getElementById('sceneBeforeSelect')?.value;
+                const afterId = document.getElementById('sceneAfterSelect')?.value;
+                if (beforeId && this._scannedScenes?.[beforeId]) {
+                    options.beforeStacItem = this._scannedScenes[beforeId];
+                }
+                if (afterId && this._scannedScenes?.[afterId]) {
+                    options.afterStacItem = this._scannedScenes[afterId];
+                }
             }
-            
+
             const result = await this.analysisService.analyze(area, options);
             
             // Mostra resultado

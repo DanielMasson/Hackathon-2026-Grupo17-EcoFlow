@@ -210,29 +210,47 @@ class AnalysisService {
             // buscar a imagem "visual" (true color) — fica explicitamente nulo.
             this._lastTrueColor = { before: null, after: null };
         } else if (area.geojson) {
-            // Modo STAC: busca imagens pela AOI
-            console.log('[AnalysisService] Buscando imagens no Copernicus...');
+            // Modo STAC: usa cenas escolhidas manualmente na UI (se houver) ou
+            // busca automaticamente pela AOI.
+            console.log('[AnalysisService] Preparando imagens via Copernicus...');
             const bbox = copernicusService.geojsonToBBox(area.geojson);
-            const now = new Date();
-            const startDate = options.startDate || new Date(now - 60 * 86400000).toISOString().slice(0, 10);
-            const endDate = options.endDate || now.toISOString().slice(0, 10);
 
-            const searchResult = await copernicusService.search({
-                bbox,
-                startDate,
-                endDate,
-                maxCloud: options.maxCloud || 20
-            });
+            let stacBefore, stacAfter;
 
-            if (searchResult.items.length < 2) {
-                console.warn('[AnalysisService] Menos de 2 cenas encontradas, usando modo demo.');
-                return this._demoAnalysis(area);
+            if (options.beforeStacItem && options.afterStacItem) {
+                // Usuário selecionou manualmente as duas datas na aba de
+                // Análise ("Buscar Cenas Disponíveis") — pula a busca automática
+                // (mais antiga/mais recente) e usa exatamente o que foi escolhido.
+                stacBefore = options.beforeStacItem;
+                stacAfter = options.afterStacItem;
+
+                // Garante ordem cronológica mesmo que o usuário troque os selects.
+                if (new Date(stacBefore.date) > new Date(stacAfter.date)) {
+                    [stacBefore, stacAfter] = [stacAfter, stacBefore];
+                }
+
+                console.log(`[AnalysisService] Cenas selecionadas manualmente: ${stacBefore.date} → ${stacAfter.date}`);
+            } else {
+                const now = new Date();
+                const startDate = options.startDate || new Date(now - 60 * 86400000).toISOString().slice(0, 10);
+                const endDate = options.endDate || now.toISOString().slice(0, 10);
+
+                const searchResult = await copernicusService.search({
+                    bbox,
+                    startDate,
+                    endDate,
+                    maxCloud: options.maxCloud || 20
+                });
+
+                if (searchResult.items.length < 2) {
+                    console.warn('[AnalysisService] Menos de 2 cenas encontradas, usando modo demo.');
+                    return this._demoAnalysis(area);
+                }
+
+                const sorted = searchResult.items.sort((a, b) => new Date(a.date) - new Date(b.date));
+                stacBefore = sorted[0];
+                stacAfter = sorted[sorted.length - 1];
             }
-
-            // Seleciona antes (menor data) e depois (maior data)
-            const sorted = searchResult.items.sort((a, b) => new Date(a.date) - new Date(b.date));
-            const stacBefore = sorted[0];
-            const stacAfter = sorted[sorted.length - 1];
 
             console.log(`[AnalysisService] Antes: ${stacBefore.date} | Depois: ${stacAfter.date}`);
 
