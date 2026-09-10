@@ -545,6 +545,19 @@
     <script src="js/ui/services/AnalysisService.js"></script>
     <script src="js/ui/services/ReportService.js"></script>
     <script src="js/ui/services/MapService.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Turf.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <!-- Proj4js — reprojeção UTM ↔ WGS84, necessário para:
+        1) recortar o download da cena Sentinel-2 pela janela da AOI (CopernicusService._bboxToPixelWindow)
+        2) restringir a detecção de mudanças ao polígono real desenhado, não ao bbox (RasterProcessor.buildPolygonMask) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+
+    <!-- Leaflet JS (CARREGAR PRIMEIRO) -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <!-- 3. UI -->
     <script src="js/ui/Dashboard.js"></script>

@@ -242,6 +242,9 @@ class CopernicusService {
         const assets = item.assets || {};
         const b04 = this._findBandAsset(assets, 'B04');
         const b08 = this._findBandAsset(assets, 'B08');
+        // NOVO: asset "visual" (TCI/true-color) — usado para comparação visual
+        // com o NDVI e identificação de falsos positivos.
+        const visual = assets.visual || assets.thumbnail || null;
         return {
             id: item.id,
             datetime: props.datetime,
@@ -253,7 +256,8 @@ class CopernicusService {
             bands: Object.keys(assets).filter(k => /^b\d/i.test(k)),
             assets: {
                 B04: b04 ? { href: b04.href, title: b04.title } : null,
-                B08: b08 ? { href: b08.href, title: b08.title } : null
+                B08: b08 ? { href: b08.href, title: b08.title } : null,
+                visual: visual ? { href: visual.href, title: visual.title } : null
             },
             bbox: item.bbox || null,
             raw: item
@@ -447,6 +451,61 @@ class CopernicusService {
         return { data, width, height, geoKeys };
     }
 
+        /**
+     * Carrega a imagem "visual" (composição RGB true-color) de um item STAC,
+     * recortada pela mesma janela de pixels usada para as bandas NDVI. Serve
+     * para comparar visualmente o alerta com a cena real e descartar falsos
+     * positivos (sombra de nuvem, variação sazonal, etc. que "parecem"
+     * mudança no NDVI mas não são).
+     * @param {Object} stacItem - item parseado do STAC
+     * @param {number[]|null} bboxWGS84
+     * @returns {Promise<string|null>} dataURL PNG, ou null se indisponível
+     */
+    async loadTrueColorImage(stacItem, bboxWGS84 = null) {
+        const visualUrl = stacItem.assets.visual?.href;
+        if (!visualUrl || typeof GeoTIFF === 'undefined') return null;
+
+        try {
+            this._assertSupportedRasterFormat(visualUrl);
+            const authHeaders = await this._authHeaders();
+            const tiff = await GeoTIFF.fromUrl(visualUrl, { headers: authHeaders });
+            const image = await tiff.getImage();
+
+            const pixelWindow = bboxWGS84 ? this._bboxToPixelWindow(image, bboxWGS84) : null;
+            const readOpts = pixelWindow ? { window: pixelWindow } : {};
+            const rasters = await image.readRasters(readOpts);
+
+            const width = pixelWindow ? pixelWindow[2] - pixelWindow[0] : image.getWidth();
+            const height = pixelWindow ? pixelWindow[3] - pixelWindow[1] : image.getHeight();
+
+            return this._rgbRastersToDataURL(rasters, width, height);
+        } catch (e) {
+            console.warn('[CopernicusService] Não foi possível carregar imagem true-color:', e);
+            return null;
+        }
+    }
+
+    /**
+     * Converte rasters RGB (TypedArrays, um por banda) em dataURL PNG via canvas.
+     * @private
+     */
+    _rgbRastersToDataURL(rasters, width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(width, height);
+
+        const r = rasters[0], g = rasters[1] || rasters[0], b = rasters[2] || rasters[0];
+        for (let i = 0; i < width * height; i++) {
+            imgData.data[i * 4] = r[i] || 0;
+            imgData.data[i * 4 + 1] = g[i] || 0;
+            imgData.data[i * 4 + 2] = b[i] || 0;
+            imgData.data[i * 4 + 3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        return canvas.toDataURL('image/png');
+    }
     /**
      * Carrega par de bandas B04+B08 de um item STAC.
      * @param {Object} stacItem - item parseado do STAC
