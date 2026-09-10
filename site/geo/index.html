@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Environmental Intelligence Center</title>
+    <title>EcoFlow</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -36,13 +37,12 @@
             </button>
             <div class="logo">
                 <svg viewBox="0 0 40 40" width="40" height="40">
-                    <circle cx="20" cy="20" r="18" fill="none" stroke="#00d4ff" stroke-width="2"/>
-                    <circle cx="20" cy="20" r="10" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
-                    <circle cx="20" cy="20" r="3" fill="#00d4ff"/>
-                    <path d="M20 2 L20 38 M2 20 L38 20" stroke="#00d4ff" stroke-width="0.5" opacity="0.3"/>
+                    <circle cx="20" cy="20" r="18" fill="none" stroke="#00e676" stroke-width="2"/>
+                    <circle cx="20" cy="20" r="10" fill="none" stroke="#00e676" stroke-width="1.5"/>
+                    <circle cx="20" cy="20" r="3" fill="#00e676"/>
+                    <path d="M20 2 L20 38 M2 20 L38 20" stroke="#00e676" stroke-width="0.5" opacity="0.3"/>
                 </svg>
-                <span class="logo-text">EIC</span>
-                <span class="logo-sub">Environmental Intelligence Center</span>
+                <span class="logo-text">EcoFlow</span>
             </div>
             <span class="demo-badge">🔬 MODO DE DEMONSTRAÇÃO</span>
         </div>
@@ -253,8 +253,7 @@
                         <div style="font-weight:600;font-size:14px;margin-bottom:12px;">📅 Seleção de Datas (Antes/Depois)</div>
                         <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
                             Por padrão, o sistema compara a cena mais antiga com a mais recente encontrada nos últimos 60 dias.
-                            Para controlar exatamente quais datas comparar, defina o período de busca abaixo e escolha as cenas manualmente
-                            (aplica-se apenas à busca automática via Copernicus/STAC — não ao upload manual de bandas).
+                            Para controlar exatamente quais datas comparar, defina o período de busca abaixo e escolha as cenas manualmente.
                         </div>
                         <div class="form-row">
                             <div class="form-group">
@@ -289,38 +288,6 @@
                                     <option value="">-- Automático (mais recente) --</option>
                                 </select>
                             </div>
-                        </div>
-                    </div>
-
-                    <div id="bandUploadSection" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-top:12px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                            <div style="font-weight:600;font-size:14px;">🛰️ Bandas Sentinel-2 (Opcional)</div>
-                            <span id="uploadModeLabel" style="font-size:11px;padding:3px 8px;border-radius:4px;background:var(--accent-yellow);color:var(--bg-primary);">MODO DEMO</span>
-                        </div>
-                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-                            Para análise real, faça upload de bandas GeoTIFF (.tiff) baixadas do 
-                            <a href="https://browser.dataspace.copernicus.eu/" target="_blank" style="color:var(--accent-blue);">Copernicus Browser</a>.
-                        </div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                            <div>
-                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B04 (RED) — Antes</label>
-                                <input type="file" id="fileRedBefore" accept=".tif,.tiff" style="font-size:12px;width:100%;">
-                            </div>
-                            <div>
-                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B08 (NIR) — Antes</label>
-                                <input type="file" id="fileNirBefore" accept=".tif,.tiff" style="font-size:12px;width:100%;">
-                            </div>
-                            <div>
-                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B04 (RED) — Depois</label>
-                                <input type="file" id="fileRedAfter" accept=".tif,.tiff" style="font-size:12px;width:100%;">
-                            </div>
-                            <div>
-                                <label style="font-size:12px;font-weight:500;display:block;margin-bottom:4px;">B08 (NIR) — Depois</label>
-                                <input type="file" id="fileNirAfter" accept=".tif,.tiff" style="font-size:12px;width:100%;">
-                            </div>
-                        </div>
-                        <div style="margin-top:10px;font-size:11px;color:var(--text-muted);">
-                            💡 Envie 2 arquivos (B04+B08 da mesma cena) ou 4 arquivos (B04/B08 antes + B04/B08 depois).
                         </div>
                     </div>
 

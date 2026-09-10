@@ -133,10 +133,6 @@ class App {
         // Atualiza badge de modo (DEMO/REAL) conforme APP_CONFIG
         this._updateModeBadge();
 
-        // Atualiza label de upload de bandas (mesmo motivo do badge acima:
-        // o HTML estático tem "MODO DEMO" fixo até este ponto rodar)
-        this._updateUploadStatus();
-        
         // Mostra notificação de boas-vindas
         setTimeout(() => {
             this._showWelcomeNotification();
@@ -381,13 +377,6 @@ class App {
         // Busca manual de cenas Sentinel-2 disponíveis (seleção de datas)
         document.getElementById('searchScenesBtn')?.addEventListener('click', () => {
             this._searchAvailableScenes();
-        });
-
-        // Upload de bandas — detecta arquivos selecionados
-        ['fileRedBefore', 'fileNirBefore', 'fileRedAfter', 'fileNirAfter'].forEach(id => {
-            document.getElementById(id)?.addEventListener('change', () => {
-                this._updateUploadStatus();
-            });
         });
 
         // Configurações
@@ -659,10 +648,10 @@ class App {
                         allowIntersection: false,
                         showArea: true,
                         shapeOptions: {
-                            color: '#00d4ff',
+                            color: '#00e676',
                             weight: 2,
                             opacity: 0.8,
-                            fillColor: '#00d4ff',
+                            fillColor: '#00e676',
                             fillOpacity: 0.2
                         }
                     },
@@ -704,10 +693,10 @@ class App {
                     allowIntersection: false,
                     showArea: true,
                     shapeOptions: {
-                        color: '#00d4ff',
+                        color: '#00e676',
                         weight: 2,
                         opacity: 0.8,
-                        fillColor: '#00d4ff',
+                        fillColor: '#00e676',
                         fillOpacity: 0.2
                     }
                 }).enable();
@@ -730,10 +719,10 @@ class App {
                 try {
                     const geoLayer = L.geoJSON(area.geojson, {
                         style: {
-                            color: '#00d4ff',
+                            color: '#00e676',
                             weight: 2,
                             opacity: 0.8,
-                            fillColor: '#00d4ff',
+                            fillColor: '#00e676',
                             fillOpacity: 0.2
                         }
                     });
@@ -1004,14 +993,7 @@ class App {
         const resultContainer = document.getElementById('analysisResult');
         if (!resultContainer) return;
         
-        // Coleta arquivos de upload (se houver)
-        const uploadedFiles = this._getUploadedFiles();
-        const useRealData = uploadedFiles.length > 0 && (APP_CONFIG.MODE === 'REAL' || this.copernicusService);
-        // CORREÇÃO: `useRealData` (acima) só cobre o caso de upload local.
-        // Precisamos de um rótulo separado para o caso "sem upload, mas
-        // MODE='REAL' com area.geojson", que também dispara o pipeline real
-        // (busca automática via STAC) e não deveria aparecer como demo.
-        const willSearchSTAC = !useRealData && APP_CONFIG.MODE === 'REAL' && !!area.geojson;
+        const willSearchSTAC = APP_CONFIG.MODE === 'REAL' && !!area.geojson;
 
         // Mostra loading
         resultContainer.innerHTML = `
@@ -1019,11 +1001,9 @@ class App {
                 <div style="font-size:32px;margin-bottom:16px;">⏳</div>
                 <div style="font-size:18px;font-weight:500;">Analisando área "${area.nome}"...</div>
                 <div style="color:var(--text-muted);margin-top:8px;">
-                    ${useRealData 
-                        ? `Processando ${uploadedFiles.length} banda(s) GeoTIFF via pipeline NDVI` 
-                        : willSearchSTAC
-                            ? 'Buscando cenas Sentinel-2 automaticamente via Copernicus (STAC)...'
-                            : 'Processando dados geoespaciais (modo demonstração)'}
+                    ${willSearchSTAC
+                        ? 'Buscando cenas Sentinel-2 automaticamente via Copernicus (STAC)...'
+                        : 'Processando dados geoespaciais (modo demonstração)'}
                 </div>
             </div>
         `;
@@ -1031,29 +1011,25 @@ class App {
         // Inicia análise
         try {
             const options = {};
-            if (useRealData) {
-                options.files = uploadedFiles;
-            } else {
-                // Período/nuvens de busca manual (se preenchidos)
-                const startDate = document.getElementById('analysisStartDate')?.value;
-                const endDate = document.getElementById('analysisEndDate')?.value;
-                const maxCloud = document.getElementById('analysisMaxCloud')?.value;
-                if (startDate) options.startDate = startDate;
-                if (endDate) options.endDate = endDate;
-                if (maxCloud) options.maxCloud = parseInt(maxCloud, 10);
+            // Período/nuvens de busca manual (se preenchidos)
+            const startDate = document.getElementById('analysisStartDate')?.value;
+            const endDate = document.getElementById('analysisEndDate')?.value;
+            const maxCloud = document.getElementById('analysisMaxCloud')?.value;
+            if (startDate) options.startDate = startDate;
+            if (endDate) options.endDate = endDate;
+            if (maxCloud) options.maxCloud = parseInt(maxCloud, 10);
 
-                // Cenas específicas escolhidas manualmente pelo usuário via
-                // "Buscar Cenas Disponíveis" — se ambas estiverem selecionadas,
-                // o AnalysisService usa exatamente essas datas em vez de escolher
-                // automaticamente a mais antiga/mais recente.
-                const beforeId = document.getElementById('sceneBeforeSelect')?.value;
-                const afterId = document.getElementById('sceneAfterSelect')?.value;
-                if (beforeId && this._scannedScenes?.[beforeId]) {
-                    options.beforeStacItem = this._scannedScenes[beforeId];
-                }
-                if (afterId && this._scannedScenes?.[afterId]) {
-                    options.afterStacItem = this._scannedScenes[afterId];
-                }
+            // Cenas específicas escolhidas manualmente pelo usuário via
+            // "Buscar Cenas Disponíveis" — se ambas estiverem selecionadas,
+            // o AnalysisService usa exatamente essas datas em vez de escolher
+            // automaticamente a mais antiga/mais recente.
+            const beforeId = document.getElementById('sceneBeforeSelect')?.value;
+            const afterId = document.getElementById('sceneAfterSelect')?.value;
+            if (beforeId && this._scannedScenes?.[beforeId]) {
+                options.beforeStacItem = this._scannedScenes[beforeId];
+            }
+            if (afterId && this._scannedScenes?.[afterId]) {
+                options.afterStacItem = this._scannedScenes[afterId];
             }
 
             const result = await this.analysisService.analyze(area, options);
@@ -1093,44 +1069,13 @@ class App {
     }
 
     /**
-     * Retorna arquivos de banda selecionados nos inputs de upload
+     * Retorna arquivos de banda selecionados nos inputs de upload.
+     * Upload manual removido — sempre retorna vazio.
      * @returns {File[]}
      * @private
      */
     _getUploadedFiles() {
-        const files = [];
-        ['fileRedBefore', 'fileNirBefore', 'fileRedAfter', 'fileNirAfter'].forEach(id => {
-            const input = document.getElementById(id);
-            if (input && input.files && input.files.length > 0) {
-                files.push(input.files[0]);
-            }
-        });
-        return files;
-    }
-
-    /**
-     * Atualiza indicador de modo baseado nos uploads
-     * @private
-     */
-    _updateUploadStatus() {
-        const files = this._getUploadedFiles();
-        const label = document.getElementById('uploadModeLabel');
-        if (!label) return;
-
-        if (files.length > 0) {
-            label.textContent = `${files.length} ARQUIVO(S)`;
-            label.style.background = 'var(--status-normal)';
-        } else if (APP_CONFIG.MODE === 'REAL') {
-            // CORREÇÃO: sem arquivos, mas em MODE='REAL', o AnalysisService
-            // ainda tenta o pipeline real via busca automática STAC (usando
-            // area.geojson) — não cai em demo. O label antigo ("MODO DEMO")
-            // era enganoso aqui; só é de fato demo se MODE='DEMO'.
-            label.textContent = 'BUSCA AUTOMÁTICA (STAC)';
-            label.style.background = 'var(--status-normal)';
-        } else {
-            label.textContent = 'MODO DEMO';
-            label.style.background = 'var(--accent-yellow)';
-        }
+        return [];
     }
 
     /**

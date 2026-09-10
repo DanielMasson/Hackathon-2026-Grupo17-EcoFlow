@@ -3,37 +3,37 @@
    ROOT VARIABLES - DESIGN SYSTEM
    ============================================================ */
 :root {
-    /* Primary Palette - Dark Tech */
-    --bg-primary: #0a0e17;
-    --bg-secondary: #111927;
-    --bg-tertiary: #1a2332;
-    --bg-card: #141d2b;
-    --bg-hover: #1e2a3d;
-    
+    /* Primary Palette - Dark Green/Black (EcoFlow) */
+    --bg-primary: #070c09;
+    --bg-secondary: #0d1712;
+    --bg-tertiary: #14241a;
+    --bg-card: #101d15;
+    --bg-hover: #1a2e20;
+
     /* Accent Colors */
-    --accent-blue: #00d4ff;
-    --accent-cyan: #00ffd4;
-    --accent-green: #00ff88;
-    --accent-yellow: #ffd700;
+    --accent-blue: #00e676;
+    --accent-cyan: #00ff9d;
+    --accent-green: #2ecc71;
+    --accent-yellow: #c8e600;
     --accent-orange: #ff8c00;
-    --accent-red: #ff0040;
-    
+    --accent-red: #ff3b3b;
+
     /* Text Colors */
-    --text-primary: #e8edf5;
-    --text-secondary: #8a9bb5;
-    --text-muted: #4a5a75;
-    
+    --text-primary: #e6f5ec;
+    --text-secondary: #8fae9b;
+    --text-muted: #4a6155;
+
     /* Status Colors */
-    --status-critical: #ff0040;
+    --status-critical: #ff3b3b;
     --status-high: #ff8c00;
-    --status-medium: #ffd700;
-    --status-normal: #00ff88;
-    --status-info: #00d4ff;
-    
+    --status-medium: #c8e600;
+    --status-normal: #00e676;
+    --status-info: #00e676;
+
     /* Borders & Shadows */
-    --border-color: #1e2a3d;
-    --shadow-color: rgba(0, 212, 255, 0.05);
-    --glow-blue: 0 0 20px rgba(0, 212, 255, 0.15);
+    --border-color: #1c3326;
+    --shadow-color: rgba(0, 230, 118, 0.05);
+    --glow-blue: 0 0 20px rgba(0, 230, 118, 0.18);
     
     /* Typography */
     --font-main: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;

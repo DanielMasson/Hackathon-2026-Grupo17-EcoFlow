@@ -178,7 +178,7 @@ class ImageComparator {
 
                             <!-- Imagem "Antes" (recortada pelo slider) -->
                             <div id="comparatorBeforeContainer" 
-                                 style="position:absolute;top:0;left:0;width:50%;height:100%;overflow:hidden;border-right:3px solid #00d4ff;transition:width 0.05s linear;">
+                                 style="position:absolute;top:0;left:0;width:50%;height:100%;overflow:hidden;border-right:3px solid #00e676;transition:width 0.05s linear;">
                                 <img id="comparatorBefore" 
                                      src="${beforeDataUrl}" 
                                      alt="Imagem anterior" 
@@ -187,17 +187,17 @@ class ImageComparator {
 
                             <!-- Linha do slider -->
                             <div id="comparatorHandle" 
-                                 style="position:absolute;top:0;left:50%;width:3px;height:100%;background:#00d4ff;cursor:ew-resize;transform:translateX(-50%);z-index:10;">
-                                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;background:#00d4ff;border-radius:50%;border:3px solid var(--bg-primary);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--bg-primary);font-weight:bold;box-shadow:0 0 20px rgba(0,212,255,0.3);">
+                                 style="position:absolute;top:0;left:50%;width:3px;height:100%;background:#00e676;cursor:ew-resize;transform:translateX(-50%);z-index:10;">
+                                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;background:#00e676;border-radius:50%;border:3px solid var(--bg-primary);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--bg-primary);font-weight:bold;box-shadow:0 0 20px rgba(0,230,118,0.3);">
                                     ⟷
                                 </div>
                             </div>
 
                             <!-- Labels -->
-                            <div style="position:absolute;bottom:12px;left:12px;background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:4px;font-size:12px;color:#00ff88;z-index:5;">
+                            <div style="position:absolute;bottom:12px;left:12px;background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:4px;font-size:12px;color:#00e676;z-index:5;">
                                 📅 ANTES: ${beforeDate}
                             </div>
-                            <div style="position:absolute;bottom:12px;right:12px;background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:4px;font-size:12px;color:#00d4ff;z-index:5;">
+                            <div style="position:absolute;bottom:12px;right:12px;background:rgba(0,0,0,0.7);padding:4px 12px;border-radius:4px;font-size:12px;color:#00e676;z-index:5;">
                                 📅 DEPOIS: ${afterDate}
                             </div>
                             
@@ -214,7 +214,7 @@ class ImageComparator {
                         <span style="font-size:13px;color:var(--text-secondary);">ANTES</span>
                         <input type="range" id="comparatorSlider" 
                                min="0" max="100" value="50" 
-                               style="flex:1;accent-color:#00d4ff;height:4px;cursor:pointer;">
+                               style="flex:1;accent-color:#00e676;height:4px;cursor:pointer;">
                         <span style="font-size:13px;color:var(--text-secondary);">DEPOIS</span>
                     </div>
 

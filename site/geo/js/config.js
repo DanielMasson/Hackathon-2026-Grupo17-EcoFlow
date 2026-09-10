@@ -20,8 +20,8 @@ const APP_CONFIG = {
     VERSION: '1.0.1',
     
     // Nome do sistema
-    NAME: 'Environmental Intelligence Center',
-    SHORT_NAME: 'EIC',
+    NAME: 'EcoFlow',
+    SHORT_NAME: 'EcoFlow',
     
     // Configurações do mapa
     MAP: {

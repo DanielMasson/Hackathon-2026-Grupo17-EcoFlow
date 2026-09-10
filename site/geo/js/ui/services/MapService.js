@@ -211,16 +211,16 @@ class MapService {
 
         switch(status) {
             case 'normal':
-                return { ...baseStyle, color: '#00ff88', fillColor: '#00ff88' };
+                return { ...baseStyle, color: '#00e676', fillColor: '#00e676' };
             case 'alteracao':
                 switch(severity) {
-                    case 'critica': return { ...baseStyle, color: '#ff0040', fillColor: '#ff0040', fillOpacity: 0.3 };
+                    case 'critica': return { ...baseStyle, color: '#ff3b3b', fillColor: '#ff3b3b', fillOpacity: 0.3 };
                     case 'alta': return { ...baseStyle, color: '#ff8c00', fillColor: '#ff8c00', fillOpacity: 0.3 };
-                    case 'media': return { ...baseStyle, color: '#ffd700', fillColor: '#ffd700', fillOpacity: 0.3 };
-                    default: return { ...baseStyle, color: '#ffd700', fillColor: '#ffd700' };
+                    case 'media': return { ...baseStyle, color: '#c8e600', fillColor: '#c8e600', fillOpacity: 0.3 };
+                    default: return { ...baseStyle, color: '#c8e600', fillColor: '#c8e600' };
                 }
             default:
-                return { ...baseStyle, color: '#00d4ff', fillColor: '#00d4ff' };
+                return { ...baseStyle, color: '#00e676', fillColor: '#00e676' };
         }
     }
 
@@ -237,15 +237,15 @@ class MapService {
         
         return `
             <div style="min-width:180px;">
-                <h4 style="margin:0 0 4px;color:#00d4ff;">${area.nome}</h4>
-                <div style="font-size:12px;color:#8a9bb5;">
+                <h4 style="margin:0 0 4px;color:#00e676;">${area.nome}</h4>
+                <div style="font-size:12px;color:#8fae9b;">
                     <div>📍 ${area.areaHa?.toFixed(1) || 0} ha</div>
                     <div>📂 ${APP_CONFIG.CATEGORIES.find(c => c.value === area.categoria)?.label || area.categoria}</div>
                     <div style="margin-top:4px;">${statusLabel}</div>
                     ${area.analysis?.confidence ? `<div>🎯 Confiança: ${(area.analysis.confidence * 100).toFixed(0)}%</div>` : ''}
                 </div>
                 <button onclick="window.app?.switchView('areas')" 
-                        style="margin-top:8px;padding:4px 12px;background:#00d4ff;color:#0a0e17;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+                        style="margin-top:8px;padding:4px 12px;background:#00e676;color:#070c09;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
                     Ver detalhes
                 </button>
             </div>
@@ -296,12 +296,12 @@ class MapService {
      */
     _getAlertIcon(severity) {
         const colors = {
-            'critica': '#ff0040',
+            'critica': '#ff3b3b',
             'alta': '#ff8c00',
-            'media': '#ffd700',
-            'normal': '#00ff88'
+            'media': '#c8e600',
+            'normal': '#00e676'
         };
-        const color = colors[severity] || '#00d4ff';
+        const color = colors[severity] || '#00e676';
 
         return L.divIcon({
             className: 'alert-marker',
@@ -341,17 +341,17 @@ class MapService {
 
         return `
             <div style="min-width:200px;">
-                <h4 style="margin:0 0 4px;color:${alert.severity === 'critica' ? '#ff0040' : '#ffd700'};">
+                <h4 style="margin:0 0 4px;color:${alert.severity === 'critica' ? '#ff3b3b' : '#c8e600'};">
                     ⚠️ ${severityLabels[alert.severity] || 'Alerta'}
                 </h4>
                 <div style="font-size:13px;font-weight:500;">${alert.areaName || area.nome}</div>
-                <div style="font-size:12px;color:#8a9bb5;margin-top:4px;">
+                <div style="font-size:12px;color:#8fae9b;margin-top:4px;">
                     <div>📏 ${alert.affectedAreaHa?.toFixed(1) || 0} ha afetados</div>
                     <div>🎯 Confiança: ${(alert.confidence * 100).toFixed(0)}%</div>
                     <div>📅 ${new Date(alert.date).toLocaleDateString()}</div>
                 </div>
                 <button onclick="window.app?.switchView('alerts')" 
-                        style="margin-top:8px;padding:4px 12px;background:#ff8c00;color:#0a0e17;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+                        style="margin-top:8px;padding:4px 12px;background:#ff8c00;color:#070c09;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
                     Ver alerta
                 </button>
             </div>
@@ -399,10 +399,10 @@ class MapService {
             try {
                 L.geoJSON(change.geojson, {
                     style: {
-                        color: '#ff0040',
+                        color: '#ff3b3b',
                         weight: 3,
                         opacity: 0.8,
-                        fillColor: '#ff0040',
+                        fillColor: '#ff3b3b',
                         fillOpacity: 0.15,
                         dashArray: '5,5'
                     }

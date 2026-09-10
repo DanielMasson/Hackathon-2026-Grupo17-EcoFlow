@@ -106,8 +106,8 @@ class Dashboard {
                     {
                         label: 'Áreas Normais',
                         data: normalData,
-                        borderColor: '#00ff88',
-                        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                        borderColor: '#00e676',
+                        backgroundColor: 'rgba(0, 230, 118, 0.1)',
                         tension: 0.4,
                         fill: true
                     },
@@ -127,7 +127,7 @@ class Dashboard {
                 plugins: {
                     legend: {
                         labels: {
-                            color: '#8a9bb5',
+                            color: '#8fae9b',
                             font: { size: 11 }
                         }
                     }
@@ -183,9 +183,9 @@ class Dashboard {
         };
 
         const colors = {
-            'possivel_desmatamento': '#ff0040',
+            'possivel_desmatamento': '#ff3b3b',
             'possivel_queimada': '#ff8c00',
-            'alteracao_vegetacao': '#ffd700',
+            'alteracao_vegetacao': '#c8e600',
             'solo_exposto': '#cc8844',
             'agua': '#00aaff',
             'alteracao_urbana': '#aa44ff',
@@ -224,7 +224,7 @@ class Dashboard {
                 datasets: [{
                     data: data,
                     backgroundColor: colorList,
-                    borderColor: '#0a0e17',
+                    borderColor: '#070c09',
                     borderWidth: 2
                 }]
             },
@@ -235,7 +235,7 @@ class Dashboard {
                     legend: {
                         position: 'right',
                         labels: {
-                            color: '#8a9bb5',
+                            color: '#8fae9b',
                             font: { size: 11 },
                             padding: 8
                         }

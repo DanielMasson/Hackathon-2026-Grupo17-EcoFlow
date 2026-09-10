@@ -220,19 +220,19 @@ class ImageService {
 
         // Preenchimento
         ctx.fillStyle = condition === 'preserved' 
-            ? 'rgba(0, 255, 136, 0.15)' 
-            : 'rgba(255, 0, 64, 0.2)';
+            ? 'rgba(0, 230, 118, 0.15)' 
+            : 'rgba(255, 59, 59, 0.2)';
         ctx.fill();
         
         // Borda
-        ctx.strokeStyle = condition === 'preserved' ? '#00ff88' : '#ff0040';
+        ctx.strokeStyle = condition === 'preserved' ? '#00e676' : '#ff3b3b';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // Texto no centro
-        ctx.fillStyle = condition === 'preserved' ? '#00ff88' : '#ff8c00';
+        ctx.fillStyle = condition === 'preserved' ? '#00e676' : '#ff8c00';
         ctx.font = '14px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';

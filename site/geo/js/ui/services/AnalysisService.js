@@ -195,21 +195,9 @@ class AnalysisService {
             return this._demoAnalysis(area);
         }
 
-        // Determina fonte de dados: upload local ou busca STAC
-        const files = options.files || window.app?._pendingBandFiles || null;
         let before, after;
 
-        if (files && files.length >= 2) {
-            // Modo upload local
-            console.log('[AnalysisService] Usando bandas locais (' + files.length + ' arquivos)');
-            const pair = await copernicusService.loadPairFromFiles(files);
-            before = pair.before;
-            after = pair.after || pair.before; // Se só tem 1 cena, compara consigo mesma
-
-            // Upload manual não tem item STAC associado, então não há como
-            // buscar a imagem "visual" (true color) — fica explicitamente nulo.
-            this._lastTrueColor = { before: null, after: null };
-        } else if (area.geojson) {
+        if (area.geojson) {
             // Modo STAC: usa cenas escolhidas manualmente na UI (se houver) ou
             // busca automaticamente pela AOI.
             console.log('[AnalysisService] Preparando imagens via Copernicus...');

@@ -182,7 +182,7 @@ class ReportService {
     <meta charset="UTF-8">
     <title>Relatório Ambiental</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 1200px; margin: 0 auto; background: #0a0e17; color: #e8edf5; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; max-width: 1200px; margin: 0 auto; background: #070c09; color: #e6f5ec; }
         @media print { body { background: white; color: black; } }
     </style>
 </head>
