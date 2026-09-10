@@ -144,6 +144,28 @@ class ResultImageStore {
     }
 
     /**
+     * Remove TODOS os snapshots salvos (todas as áreas). Usado ao (re)carregar
+     * os dados de demonstração no localStorage, para não deixar snapshots de
+     * análises reais de sessões/deploys anteriores (IndexedDB) "sobrando"
+     * vinculados aos mesmos IDs fixos de área do demoData.js.
+     * @returns {Promise<boolean>}
+     */
+    async clearAll() {
+        const ok = await this.init();
+        if (!ok || !this.db) return false;
+
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).clear();
+            tx.oncomplete = () => {
+                console.log('[ResultImageStore] Todos os snapshots removidos');
+                resolve(true);
+            };
+            tx.onerror = () => resolve(false);
+        });
+    }
+
+    /**
      * Remove snapshots antigos, mantendo só os `maxPerArea` mais recentes
      * por área — evita crescimento ilimitado do IndexedDB.
      * @param {number} maxPerArea
