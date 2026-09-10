@@ -2,6 +2,15 @@
  * SATELLITE SERVICE
  * Abstração para integração com Copernicus/Sentinel
  * Atualmente em modo DEMO
+ *
+ * CORREÇÃO APLICADA:
+ * - init() não cria mais uma instância própria e independente de
+ *   CopernicusService. Antes disso gerava duas instâncias completamente
+ *   separadas (uma aqui, outra em App.init() como window.app.copernicusService),
+ *   sem cache/estado compartilhado. Agora reaproveita window.app.copernicusService
+ *   quando ela existir; só cria uma instância própria como fallback (ex.:
+ *   se este serviço for inicializado antes do CopernicusService global —
+ *   nesse caso ela é substituída na próxima leitura, via getter).
  */
 
 class SatelliteService {
@@ -13,7 +22,7 @@ class SatelliteService {
             apiKey: null,
             collection: 'SENTINEL-2'
         };
-        this.copernicusService = null;
+        this._ownCopernicusService = null;
     }
 
     /**
@@ -29,15 +38,29 @@ class SatelliteService {
             this.isConfigured = !!settings.endpoint;
         }
 
-        // Inicializa CopernicusService se disponível
-        if (window.CopernicusService && APP_CONFIG.MODE === 'REAL') {
-            this.copernicusService = new CopernicusService();
-            this.copernicusService.init();
-            console.log('[SatelliteService] CopernicusService integrado');
-        }
-
         this._initialized = true;
         console.log('[SatelliteService] Inicializado. Modo:', APP_CONFIG.MODE);
+    }
+
+    /**
+     * Retorna a instância de CopernicusService a ser usada, priorizando a
+     * instância global (window.app.copernicusService) para evitar estado
+     * duplicado. Só instancia uma própria como último recurso.
+     * @returns {CopernicusService|null}
+     */
+    get copernicusService() {
+        if (window.app?.copernicusService) {
+            return window.app.copernicusService;
+        }
+        if (APP_CONFIG.MODE === 'REAL' && window.CopernicusService) {
+            if (!this._ownCopernicusService) {
+                this._ownCopernicusService = new CopernicusService();
+                this._ownCopernicusService.init();
+                console.log('[SatelliteService] CopernicusService próprio criado como fallback (window.app.copernicusService ainda não disponível)');
+            }
+            return this._ownCopernicusService;
+        }
+        return null;
     }
 
     /**
@@ -127,14 +150,15 @@ class SatelliteService {
      * @private
      */
     async _realSearch(params) {
-        if (!this.copernicusService) {
+        const copernicusService = this.copernicusService;
+        if (!copernicusService) {
             console.warn('[SatelliteService] CopernicusService não disponível. Usando demo.');
             return this._demoSearch(params);
         }
 
         try {
             const { aoi, startDate, endDate, cloudCoverage } = params;
-            const result = await this.copernicusService.search({
+            const result = await copernicusService.search({
                 bbox: aoi,
                 startDate: startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
                 endDate: endDate || new Date().toISOString().slice(0, 10),

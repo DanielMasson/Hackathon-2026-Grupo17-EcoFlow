@@ -1,30 +1,51 @@
 /**
  * ANALYSIS SERVICE
  * Motor de análise de alterações ambientais
+ *
+ * CORREÇÕES APLICADAS:
+ * 1. Os serviços (areaService, alertService, auditService, copernicusService,
+ *    rasterProcessor) deixaram de ser capturados uma única vez em init()
+ *    (quando window.app podia ainda não existir/estar completo) e passaram
+ *    a ser resolvidos sob demanda via getters que leem window.app no
+ *    momento do uso. Isso corrige o bug em que o pipeline REAL nunca era
+ *    executado porque copernicusService/rasterProcessor ficavam null.
+ * 2. Removida a duplicação de _demoAnalysis()/_generateRandomChange()
+ *    (a classe tinha duas definições — a segunda sobrescrevia a primeira
+ *    silenciosamente, deixando código morto).
+ * 3. Quando as bandas antes/depois têm dimensões diferentes, agora são
+ *    de fato recortadas (via RasterProcessor.cropBandTopLeft), em vez de
+ *    só reescrever os metadados width/height (o que desalinhava a
+ *    indexação pixel a pixel).
+ * 4. A AOI (bbox da área) é propagada para loadPairFromSTAC(), permitindo
+ *    o recorte por janela de pixels em vez de baixar a cena inteira.
  */
 
 class AnalysisService {
     constructor() {
-        this.areaService = null;
-        this.alertService = null;
-        this.auditService = null;
         this._initialized = false;
         this.analysisInProgress = false;
     }
 
     /**
-     * Inicializa o serviço
+     * Inicializa o serviço. Não captura mais referências de window.app aqui
+     * — elas são resolvidas sob demanda pelos getters abaixo, porque no
+     * momento em que init() roda (dentro de App.init()) nem todos os
+     * serviços podem já ter sido criados/expostos.
      */
     init() {
         if (this._initialized) return;
-        this.areaService = window.app?.areaService;
-        this.alertService = window.app?.alertService;
-        this.auditService = window.app?.auditService;
-        this.copernicusService = window.app?.copernicusService || null;
-        this.rasterProcessor = window.app?.rasterProcessor || null;
         this._initialized = true;
         console.log('[AnalysisService] Inicializado');
     }
+
+    // ------------------------------------------------------------------
+    // Getters de acesso tardio (lazy) aos serviços globais
+    // ------------------------------------------------------------------
+    get areaService() { return window.app?.areaService || null; }
+    get alertService() { return window.app?.alertService || null; }
+    get auditService() { return window.app?.auditService || null; }
+    get copernicusService() { return window.app?.copernicusService || null; }
+    get rasterProcessor() { return window.app?.rasterProcessor || null; }
 
     /**
      * Analisa uma área
@@ -57,6 +78,8 @@ class AnalysisService {
             // Atualiza área
             if (this.areaService) {
                 this.areaService.updateAnalysis(area.id, result);
+            } else {
+                console.warn('[AnalysisService] areaService indisponível — resultado não persistido diretamente (a UI ainda deve refletir via _updateUI()).');
             }
 
             // Gera alerta se necessário
@@ -76,10 +99,11 @@ class AnalysisService {
                     analysisResult: result
                 });
             }
-            // NOVO: Atualiza imagens após análise
-        if (window.app?.imageService) {
-            window.app.imageService.updateAfterAnalysis(area.id, result);
-        }
+
+            // Atualiza imagens após análise
+            if (window.app?.imageService) {
+                window.app.imageService.updateAfterAnalysis(area.id, result);
+            }
 
             return result;
 
@@ -138,98 +162,8 @@ class AnalysisService {
             return this._demoAnalysis(area);
         }
 
-        // Modo REAL - preparado para integração futura
+        // Modo REAL - pipeline Copernicus + RasterProcessor
         return this._realAnalysis(area, options);
-    }
-
-    /**
-     * Análise de demonstração
-     * @param {Object} area 
-     * @returns {Object}
-     * @private
-     */
-    _demoAnalysis(area) {
-        // Usa o status atual da área ou gera aleatório
-        const currentStatus = area.analysis?.status || 'normal';
-        
-        // Se já tem análise, pode manter ou forçar nova
-        const shouldChange = Math.random() > 0.6;
-        
-        let result;
-        
-        if (currentStatus === 'normal' && shouldChange) {
-            // Pode gerar alteração
-            result = this._generateRandomChange();
-        } else if (currentStatus === 'alteracao' && shouldChange) {
-            // Pode manter ou mudar
-            result = this._generateRandomChange();
-        } else {
-            // Mantém normal ou usa o existente
-            result = {
-                status: currentStatus,
-                type: area.analysis?.type || 'normal',
-                type_label: this._getTypeLabel(area.analysis?.type || 'normal'),
-                severity: area.analysis?.severity || 'normal',
-                confidence: area.analysis?.confidence || 0.95,
-                affectedAreaHa: area.analysis?.affectedAreaHa || 0,
-                affectedPercentage: area.analysis?.affectedPercentage || 0,
-                previousDate: area.analysis?.previousDate || this._getDateDaysAgo(10),
-                currentDate: area.analysis?.currentDate || this._getDateDaysAgo(1),
-                indices: {
-                    ndviBefore: 0.75,
-                    ndviAfter: 0.74,
-                    ndviChange: -0.01,
-                    nbrBefore: 0.65,
-                    nbrAfter: 0.64,
-                    nbrChange: -0.01
-                },
-                isDemo: true
-            };
-        }
-
-        return result;
-    }
-
-    /**
-     * Gera uma alteração aleatória para demonstração
-     * @returns {Object}
-     * @private
-     */
-    _generateRandomChange() {
-        const types = [
-            { type: 'possivel_desmatamento', severity: 'alta', minArea: 5, maxArea: 30 },
-            { type: 'possivel_queimada', severity: 'alta', minArea: 8, maxArea: 40 },
-            { type: 'alteracao_vegetacao', severity: 'media', minArea: 2, maxArea: 15 },
-            { type: 'solo_exposto', severity: 'media', minArea: 1, maxArea: 10 },
-            { type: 'normal', severity: 'normal', minArea: 0, maxArea: 0 }
-        ];
-
-        const selected = types[Math.floor(Math.random() * types.length)];
-        const areaHa = selected.minArea + Math.random() * (selected.maxArea - selected.minArea);
-        
-        const confidence = 0.75 + Math.random() * 0.2;
-        const ndviChange = -(0.1 + Math.random() * 0.3);
-
-        return {
-            status: selected.type === 'normal' ? 'normal' : 'alteracao',
-            type: selected.type,
-            type_label: this._getTypeLabel(selected.type),
-            severity: selected.severity,
-            confidence: Math.min(confidence, 0.98),
-            affectedAreaHa: areaHa,
-            affectedPercentage: areaHa / (1000 + Math.random() * 2000) * 100,
-            previousDate: this._getDateDaysAgo(10 + Math.floor(Math.random() * 10)),
-            currentDate: this._getDateDaysAgo(1 + Math.floor(Math.random() * 5)),
-            indices: {
-                ndviBefore: 0.6 + Math.random() * 0.3,
-                ndviAfter: Math.max(0.1, 0.6 + Math.random() * 0.3 + ndviChange),
-                ndviChange: ndviChange,
-                nbrBefore: 0.5 + Math.random() * 0.3,
-                nbrAfter: Math.max(0.05, 0.5 + Math.random() * 0.3 + ndviChange * 0.8),
-                nbrChange: ndviChange * 0.8
-            },
-            isDemo: true
-        };
     }
 
     /**
@@ -240,7 +174,10 @@ class AnalysisService {
      * @private
      */
     async _realAnalysis(area, options = {}) {
-        if (!this.copernicusService || !this.rasterProcessor) {
+        const copernicusService = this.copernicusService;
+        const rasterProcessor = this.rasterProcessor;
+
+        if (!copernicusService || !rasterProcessor) {
             console.warn('[AnalysisService] CopernicusService/RasterProcessor não inicializados. Usando demo.');
             return this._demoAnalysis(area);
         }
@@ -252,18 +189,18 @@ class AnalysisService {
         if (files && files.length >= 2) {
             // Modo upload local
             console.log('[AnalysisService] Usando bandas locais (' + files.length + ' arquivos)');
-            const pair = await this.copernicusService.loadPairFromFiles(files);
+            const pair = await copernicusService.loadPairFromFiles(files);
             before = pair.before;
             after = pair.after || pair.before; // Se só tem 1 cena, compara consigo mesma
         } else if (area.geojson) {
             // Modo STAC: busca imagens pela AOI
             console.log('[AnalysisService] Buscando imagens no Copernicus...');
-            const bbox = this.copernicusService.geojsonToBBox(area.geojson);
+            const bbox = copernicusService.geojsonToBBox(area.geojson);
             const now = new Date();
             const startDate = options.startDate || new Date(now - 60 * 86400000).toISOString().slice(0, 10);
             const endDate = options.endDate || now.toISOString().slice(0, 10);
 
-            const searchResult = await this.copernicusService.search({
+            const searchResult = await copernicusService.search({
                 bbox,
                 startDate,
                 endDate,
@@ -282,10 +219,11 @@ class AnalysisService {
 
             console.log(`[AnalysisService] Antes: ${stacBefore.date} | Depois: ${stacAfter.date}`);
 
-            // Carrega bandas em paralelo
+            // Carrega bandas em paralelo, recortando pela AOI (bbox) para não
+            // baixar a cena Sentinel-2 inteira.
             const [beforeBands, afterBands] = await Promise.all([
-                this.copernicusService.loadPairFromSTAC(stacBefore),
-                this.copernicusService.loadPairFromSTAC(stacAfter)
+                copernicusService.loadPairFromSTAC(stacBefore, bbox),
+                copernicusService.loadPairFromSTAC(stacAfter, bbox)
             ]);
 
             before = beforeBands;
@@ -295,20 +233,36 @@ class AnalysisService {
             return this._demoAnalysis(area);
         }
 
-        // Valida dimensões
+        // Valida dimensões — CORREÇÃO: agora recorta de fato os arrays de
+        // dados (respeitando o stride original), em vez de só reescrever
+        // width/height, o que antes desalinhava a indexação pixel a pixel
+        // e comparava pixels de lugares diferentes da cena.
         if (before.width !== after.width || before.height !== after.height) {
-            console.warn('[AnalysisService] Dimensões diferentes antes/depois. Ajustando para menor.');
+            console.warn('[AnalysisService] Dimensões diferentes antes/depois. Recortando para a menor área comum.');
             const minW = Math.min(before.width, after.width);
             const minH = Math.min(before.height, after.height);
-            before = { ...before, width: minW, height: minH };
-            after = { ...after, width: minW, height: minH };
+
+            before = {
+                ...before,
+                red: rasterProcessor.cropBandTopLeft(before.red, before.width, before.height, minW, minH),
+                nir: rasterProcessor.cropBandTopLeft(before.nir, before.width, before.height, minW, minH),
+                width: minW,
+                height: minH
+            };
+            after = {
+                ...after,
+                red: rasterProcessor.cropBandTopLeft(after.red, after.width, after.height, minW, minH),
+                nir: rasterProcessor.cropBandTopLeft(after.nir, after.width, after.height, minW, minH),
+                width: minW,
+                height: minH
+            };
         }
 
         // Processa pipeline NDVI + detecção
         const threshold = options.threshold || APP_CONFIG.ANALYSIS.DETECTION.THRESHOLD;
         const minArea = options.minArea || APP_CONFIG.ANALYSIS.DETECTION.MIN_AREA_PIXELS;
 
-        const pipelineResult = this.rasterProcessor.processBands({
+        const pipelineResult = rasterProcessor.processBands({
             redBefore: before.red,
             nirBefore: before.nir,
             redAfter: after.red,
@@ -322,13 +276,13 @@ class AnalysisService {
         // Renderiza NDVI como canvas para UI
         let ndviBeforeImage = null, ndviAfterImage = null, changeOverlayImage = null;
         try {
-            ndviBeforeImage = this.rasterProcessor.renderNDVICanvas(
+            ndviBeforeImage = rasterProcessor.renderNDVICanvas(
                 pipelineResult.ndviBefore, before.width, before.height
             ).toDataURL('image/png');
-            ndviAfterImage = this.rasterProcessor.renderNDVICanvas(
+            ndviAfterImage = rasterProcessor.renderNDVICanvas(
                 pipelineResult.ndviAfter, before.width, before.height
             ).toDataURL('image/png');
-            changeOverlayImage = this.rasterProcessor.renderChangeOverlay(
+            changeOverlayImage = rasterProcessor.renderChangeOverlay(
                 pipelineResult.ndviAfter, pipelineResult.detection.mask, before.width, before.height
             ).toDataURL('image/png');
         } catch (e) {
@@ -339,7 +293,10 @@ class AnalysisService {
         const classif = pipelineResult.classification;
         const detection = pipelineResult.detection;
 
-        // Pega a maior região detectada
+        // Pega a maior região detectada. CORREÇÃO: detection.regions agora
+        // já vem ordenada por área decrescente (ver RasterProcessor.detectChanges),
+        // então regions[0] é de fato a maior alteração, não a primeira
+        // encontrada na varredura raster.
         const mainRegion = detection.regions.length > 0 ? detection.regions[0] : null;
 
         const result = {
@@ -732,8 +689,8 @@ class AnalysisService {
 
         return {
             type,
-            label,
             severity,
+            label,
             confidence: Math.round(confidence * 100) / 100
         };
     }

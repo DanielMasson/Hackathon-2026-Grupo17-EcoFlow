@@ -1,6 +1,15 @@
 /**
  * CONFIGURAÇÃO GLOBAL DO SISTEMA
  * Environmental Intelligence Center - Config
+ *
+ * CORREÇÃO APLICADA:
+ * - Adicionado bloco APP_CONFIG.COPERNICUS.AUTH para permitir configurar
+ *   credenciais OAuth2 do Copernicus Data Space Ecosystem (CDSE), usadas
+ *   por CopernicusService para autenticar downloads de bandas quando
+ *   necessário. Preencha CLIENT_ID/CLIENT_SECRET (client_credentials) OU
+ *   USERNAME/PASSWORD (password grant) — nunca ambos os pares vazios em
+ *   produção real. NÃO commite credenciais reais neste arquivo estático;
+ *   prefira injetá-las via variável de ambiente/build step ou backend proxy.
  */
 
 const APP_CONFIG = {
@@ -8,7 +17,7 @@ const APP_CONFIG = {
     MODE: 'REAL',
     
     // Versão
-    VERSION: '1.0.0',
+    VERSION: '1.0.1',
     
     // Nome do sistema
     NAME: 'Environmental Intelligence Center',
@@ -62,17 +71,40 @@ const APP_CONFIG = {
         }
     },
     
-    // Configurações Copernicus CDSE
+    // Configurações Copernicus / Sentinel-2
+    //
+    // CORREÇÃO: STAC_URL trocado de stac.dataspace.copernicus.eu (CDSE) para
+    // Earth Search v1 (Element84, hospedado na AWS). Motivo: a coleção
+    // "sentinel-2-l2a" da CDSE só expõe os assets B04/B08 no formato original
+    // ESA (JPEG2000, .jp2) atrás de um path "s3://eodata/..." — que não é uma
+    // URL HTTPS baixável pelo navegador E, mesmo que fosse, o geotiff.js não
+    // decodifica JPEG2000. A Earth Search indexa a MESMA coleção Sentinel-2
+    // L2A, mas reprocessada como Cloud-Optimized GeoTIFF (COG) e publicada em
+    // HTTPS público (bucket AWS Open Data), sem necessidade de OAuth2. Os
+    // nomes de asset mudam de "B04"/"B08" (CDSE) para "red"/"nir" (Earth
+    // Search) — CopernicusService._findBandAsset() já sabe procurar ambos.
     COPERNICUS: {
-        STAC_URL: 'https://stac.dataspace.copernicus.eu/v1/search',
+        STAC_URL: 'https://earth-search.aws.element84.com/v1/search',
         COLLECTION: 'sentinel-2-l2a',
         MAX_CLOUD_COVERAGE: 20,
         BAND_MAP: { red: 'B04', nir: 'B08' },
         MAX_SEARCH_RESULTS: 10,
         // URLs de referência
         DOCS: {
-            stac: 'https://documentation.dataspace.copernicus.eu/APIs/Stac.html',
+            stac: 'https://element84.com/earth-search/',
             odata: 'https://documentation.dataspace.copernicus.eu/APIs/OData.html'
+        },
+        // AUTH mantido por compatibilidade caso STAC_URL seja revertido para
+        // a CDSE no futuro. Com Earth Search, os assets COG são públicos —
+        // nenhuma credencial é necessária, e _getAccessToken() simplesmente
+        // retorna null (sem CLIENT_ID/USERNAME configurados), então nenhuma
+        // requisição sai com Authorization header. Sem efeito colateral.
+        AUTH: {
+            TOKEN_URL: 'https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token',
+            CLIENT_ID: null,
+            CLIENT_SECRET: null,
+            USERNAME: null,
+            PASSWORD: null
         }
     },
     

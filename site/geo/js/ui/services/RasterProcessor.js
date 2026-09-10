@@ -2,6 +2,16 @@
  * RASTER PROCESSOR
  * Pipeline de análise NDVI + detecção de mudanças — port do Python para JS puro.
  * Funciona com TypedArrays (Float32Array, Uint16Array) vindos do geotiff.js.
+ *
+ * CORREÇÕES APLICADAS:
+ * 1. pixelToGeo() agora reprojeta corretamente de UTM (ou qualquer CRS
+ *    projetado do GeoTIFF) para WGS84 (lat/lon) usando proj4js, em vez de
+ *    tratar diretamente os valores de origin/resolution (que vêm em metros,
+ *    não em graus) como se já fossem lat/lon.
+ * 2. Adicionado cropBandTopLeft(): quando duas bandas (antes/depois) têm
+ *    dimensões diferentes, o corte agora recorta de fato os dados (respeitando
+ *    o stride original), em vez de só reescrever os metadados width/height
+ *    — o que antes desalinhava a indexação pixel a pixel.
  */
 
 class RasterProcessor {
@@ -42,6 +52,35 @@ class RasterProcessor {
         if (maxVal > 1.5) {
             for (let i = 0; i < out.length; i++) {
                 out[i] = out[i] / 10000.0;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Recorta uma banda (TypedArray) a partir do canto superior-esquerdo,
+     * respeitando o "stride" (largura original) para não desalinhar pixels.
+     * Usado quando duas cenas (antes/depois) vêm com dimensões diferentes
+     * e é preciso comparar a mesma área de sobreposição.
+     * @param {Float32Array} data - dados originais, tamanho srcWidth*srcHeight
+     * @param {number} srcWidth
+     * @param {number} srcHeight
+     * @param {number} dstWidth - deve ser <= srcWidth
+     * @param {number} dstHeight - deve ser <= srcHeight
+     * @returns {Float32Array} tamanho dstWidth*dstHeight
+     */
+    cropBandTopLeft(data, srcWidth, srcHeight, dstWidth, dstHeight) {
+        if (dstWidth === srcWidth && dstHeight === srcHeight) {
+            return data;
+        }
+        const w = Math.min(dstWidth, srcWidth);
+        const h = Math.min(dstHeight, srcHeight);
+        const out = new Float32Array(dstWidth * dstHeight);
+        for (let y = 0; y < h; y++) {
+            const srcOffset = y * srcWidth;
+            const dstOffset = y * dstWidth;
+            for (let x = 0; x < w; x++) {
+                out[dstOffset + x] = data[srcOffset + x];
             }
         }
         return out;
@@ -236,16 +275,26 @@ class RasterProcessor {
     // ========================================================================
 
     /**
-     * Converte pixel (row, col) para lat/lon usando affine transform do GeoTIFF.
-     * Equivalente a real_data.pixel_para_coordenada_real()
+     * Converte pixel (row, col) para lat/lon usando affine transform do GeoTIFF,
+     * reprojetando para WGS84 quando o CRS de origem não for geográfico (4326).
+     *
+     * CORREÇÃO: antes esta função tratava origin/resolution do GeoTIFF como se
+     * já estivessem em graus (lon/lat). Para Sentinel-2, o GeoTIFF normalmente
+     * vem em UTM (metros) — então o resultado antigo era, na prática, a
+     * coordenada UTM disfarçada de lat/lon (ex.: lat: 8957000), o que é
+     * inválido. Agora, se `geoKeys.epsg` indicar um CRS projetado e o proj4js
+     * estiver carregado (window.proj4), a coordenada é reprojetada para
+     * EPSG:4326 antes de ser retornada.
+     *
      * @param {number} row
      * @param {number} col
-     * @param {Object} geoKeys - { origin: [lon, lat], resolution: [resX, resY] }
-     *        OU array [originLon, originLat, resX, resY]
+     * @param {Object} geoKeys - { originLon, originLat, resX, resY, epsg }
+     *        OU array [originLon, originLat, resX, resY]  (assume-se já WGS84
+     *        nesse formato legado, mantido por compatibilidade)
      * @returns {{ lat: number, lon: number }}
      */
     pixelToGeo(row, col, geoKeys) {
-        let originLon, originLat, resX, resY;
+        let originLon, originLat, resX, resY, epsg = null;
         if (Array.isArray(geoKeys)) {
             [originLon, originLat, resX, resY] = geoKeys;
         } else {
@@ -253,12 +302,66 @@ class RasterProcessor {
             originLat = geoKeys.originLat;
             resX = geoKeys.resX;
             resY = geoKeys.resY;
+            epsg = geoKeys.epsg || null;
         }
-        // GeoTIFF: origem é canto superior-esquerdo
-        // resY é negativo (Y cresce para baixo em pixels)
-        const lon = originLon + col * resX;
-        const lat = originLat - row * Math.abs(resY);
-        return { lat, lon };
+
+        // GeoTIFF: origem é canto superior-esquerdo.
+        // resY normalmente é negativo (Y cresce para baixo em pixels).
+        const x = originLon + col * resX;
+        const y = originLat - row * Math.abs(resY);
+
+        // Se o CRS de origem não for geográfico (WGS84 / EPSG:4326), x/y estão
+        // em metros (ex.: UTM) e precisam ser reprojetados para lon/lat.
+        if (epsg && epsg !== 4326) {
+            const reprojected = this._reprojectToWGS84(x, y, epsg);
+            if (reprojected) {
+                return { lat: reprojected.lat, lon: reprojected.lon };
+            }
+            // Sem proj4 disponível: não é seguro devolver x/y como se fossem
+            // lon/lat. Sinaliza no console e ainda assim retorna os valores
+            // brutos, para não quebrar o pipeline, mas o chamador deve tratar
+            // isso (ex.: exibir aviso "coordenadas não reprojetadas").
+            console.warn(
+                `[RasterProcessor] proj4 não disponível para reprojetar EPSG:${epsg} → EPSG:4326. ` +
+                'Inclua o script proj4js (https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js) ' +
+                'para obter lat/lon corretos. Retornando coordenadas não reprojetadas.'
+            );
+        }
+
+        return { lat: y, lon: x };
+    }
+
+    /**
+     * Reprojeta um ponto de um CRS projetado (ex.: UTM) para WGS84 usando proj4js.
+     * @param {number} x - coordenada no CRS de origem (metros)
+     * @param {number} y - coordenada no CRS de origem (metros)
+     * @param {number} epsg - código EPSG do CRS de origem (ex.: 32723)
+     * @returns {{lat:number, lon:number}|null} null se proj4 não estiver disponível
+     * @private
+     */
+    _reprojectToWGS84(x, y, epsg) {
+        if (typeof window === 'undefined' || typeof window.proj4 === 'undefined') {
+            return null;
+        }
+        try {
+            const proj4 = window.proj4;
+            const srcDef = `EPSG:${epsg}`;
+            // Registra a definição UTM automaticamente se ainda não existir
+            // (proj4js já conhece EPSG:4326, mas não necessariamente UTM zones).
+            if (!proj4.defs(srcDef)) {
+                const utmMatch = /^EPSG:32(6|7)(\d{2})$/.exec(srcDef);
+                if (utmMatch) {
+                    const hemisphere = utmMatch[1] === '6' ? 'north' : 'south';
+                    const zone = parseInt(utmMatch[2], 10);
+                    proj4.defs(srcDef, `+proj=utm +zone=${zone} +${hemisphere === 'south' ? 'south ' : ''}+datum=WGS84 +units=m +no_defs`);
+                }
+            }
+            const [lon, lat] = proj4(srcDef, 'EPSG:4326', [x, y]);
+            return { lat, lon };
+        } catch (e) {
+            console.warn('[RasterProcessor] Falha ao reprojetar coordenada:', e);
+            return null;
+        }
     }
 
     /**
@@ -316,9 +419,14 @@ class RasterProcessor {
         // 4. Componentes conectados + propriedades
         const { labels, numComponents, regions } = this.labelRegions(cleaned, width, height, diff);
 
-        // 5. Filtra por área mínima e converte coordenadas
+        // 5. Filtra por área mínima, ORDENA da maior para a menor região
+        //    (CORREÇÃO: antes a lista mantinha a ordem de varredura do raster,
+        //    então "a região principal" podia ser uma região pequena
+        //    encontrada primeiro, não a maior alteração real) e converte
+        //    coordenadas.
         const filtered = regions
             .filter(r => r.area >= minArea)
+            .sort((a, b) => b.area - a.area)
             .map((r, i) => {
                 let center;
                 if (geoKeys) {
@@ -467,7 +575,11 @@ class RasterProcessor {
         } else {
             type = 'inconclusivo';
             typeLabel = 'Inconclusivo';
-            severity: 'normal';
+            // CORREÇÃO: "severity: 'normal';" era um label statement, não uma
+            // atribuição — `severity` ficava `undefined` neste branch,
+            // quebrando o mapeamento de cor/severidade na UI e no
+            // AlertService (que caía sempre no default 'media').
+            severity = 'normal';
             confidence = 0.45;
         }
 

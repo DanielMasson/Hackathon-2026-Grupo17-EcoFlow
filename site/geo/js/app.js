@@ -1,6 +1,16 @@
 /**
  * APPLICATION - ORQUESTRADOR PRINCIPAL
  * Environmental Intelligence Center - App
+ *
+ * CORREÇÃO APLICADA:
+ * - window.app agora é atribuído ANTES de app.init() ser chamado.
+ *   Antes, AnalysisService.init() (chamado dentro de app.init()) tentava
+ *   ler window.app?.copernicusService / window.app?.rasterProcessor /
+ *   window.app?.areaService etc., mas window.app ainda não existia nesse
+ *   momento — então esses campos ficavam undefined/null para sempre
+ *   (por causa do guard "if (this._initialized) return;"). Resultado:
+ *   o pipeline REAL nunca rodava e o sistema caía sempre no modo DEMO,
+ *   mesmo com APP_CONFIG.MODE = 'REAL' e bandas reais enviadas.
  */
 
 class App {
@@ -56,9 +66,6 @@ class App {
         this.areaService = new AreaService();
         this.areaService.init();
         
-        this.analysisService = new AnalysisService();
-        this.analysisService.init();
-        
         this.alertService = new AlertService();
         this.alertService.init();
         
@@ -71,15 +78,17 @@ class App {
         this.auditService = new AuditService();
         this.auditService.init();
         
-        // NOVO: Inicializa Image Service
+        // Inicializa Image Service
         this.imageService = new ImageService();
         this.imageService.init();
         
-        // NOVO: Inicializa Image Comparator
+        // Inicializa Image Comparator
         this.imageComparator = new ImageComparator();
         this.imageComparator.init();
         
-        // NOVO: Inicializa RasterProcessor + CopernicusService
+        // Inicializa RasterProcessor + CopernicusService
+        // (precisam existir ANTES do AnalysisService.init(), que os lê
+        // via window.app.rasterProcessor / window.app.copernicusService)
         this.rasterProcessor = new RasterProcessor();
         this.rasterProcessor.init();
         
@@ -87,6 +96,12 @@ class App {
             this.copernicusService = new CopernicusService();
             this.copernicusService.init();
         }
+        
+        // AnalysisService por último dentre os serviços "de dados", já que
+        // depende de areaService/alertService/auditService/copernicusService/
+        // rasterProcessor estarem prontos em window.app.
+        this.analysisService = new AnalysisService();
+        this.analysisService.init();
         
         // Inicializa UI
         this.dashboard = new Dashboard();
@@ -107,6 +122,13 @@ class App {
         // Atualiza UI
         this._updateUI();
         
+        // Atualiza badge de modo (DEMO/REAL) conforme APP_CONFIG
+        this._updateModeBadge();
+
+        // Atualiza label de upload de bandas (mesmo motivo do badge acima:
+        // o HTML estático tem "MODO DEMO" fixo até este ponto rodar)
+        this._updateUploadStatus();
+        
         // Mostra notificação de boas-vindas
         setTimeout(() => {
             this._showWelcomeNotification();
@@ -119,6 +141,24 @@ class App {
         if (this.imageService) {
             console.log('📸 ImageService inicializado com imagens para', 
                 Object.keys(this.imageService.images || {}).length, 'áreas');
+        }
+    }
+
+    /**
+     * Atualiza o badge de modo no header conforme APP_CONFIG.MODE.
+     * Antes o HTML tinha "MODO DE DEMONSTRAÇÃO" fixo, mesmo com MODE='REAL'.
+     * @private
+     */
+    _updateModeBadge() {
+        const badge = document.querySelector('.demo-badge');
+        if (!badge) return;
+        if (APP_CONFIG.MODE === 'REAL') {
+            badge.textContent = '🛰️ MODO REAL (Copernicus)';
+            badge.style.color = 'var(--status-normal)';
+            badge.style.background = 'rgba(0, 255, 136, 0.12)';
+            badge.style.borderColor = 'rgba(0, 255, 136, 0.25)';
+        } else {
+            badge.textContent = '🔬 MODO DE DEMONSTRAÇÃO';
         }
     }
 
@@ -868,7 +908,12 @@ class App {
         // Coleta arquivos de upload (se houver)
         const uploadedFiles = this._getUploadedFiles();
         const useRealData = uploadedFiles.length > 0 && (APP_CONFIG.MODE === 'REAL' || this.copernicusService);
-        
+        // CORREÇÃO: `useRealData` (acima) só cobre o caso de upload local.
+        // Precisamos de um rótulo separado para o caso "sem upload, mas
+        // MODE='REAL' com area.geojson", que também dispara o pipeline real
+        // (busca automática via STAC) e não deveria aparecer como demo.
+        const willSearchSTAC = !useRealData && APP_CONFIG.MODE === 'REAL' && !!area.geojson;
+
         // Mostra loading
         resultContainer.innerHTML = `
             <div style="text-align:center;padding:40px;">
@@ -877,7 +922,9 @@ class App {
                 <div style="color:var(--text-muted);margin-top:8px;">
                     ${useRealData 
                         ? `Processando ${uploadedFiles.length} banda(s) GeoTIFF via pipeline NDVI` 
-                        : 'Processando dados geoespaciais (modo demonstração)'}
+                        : willSearchSTAC
+                            ? 'Buscando cenas Sentinel-2 automaticamente via Copernicus (STAC)...'
+                            : 'Processando dados geoespaciais (modo demonstração)'}
                 </div>
             </div>
         `;
@@ -948,16 +995,21 @@ class App {
     _updateUploadStatus() {
         const files = this._getUploadedFiles();
         const label = document.getElementById('uploadModeLabel');
+        if (!label) return;
+
         if (files.length > 0) {
-            if (label) {
-                label.textContent = `${files.length} ARQUIVO(S)`;
-                label.style.background = 'var(--status-normal)';
-            }
+            label.textContent = `${files.length} ARQUIVO(S)`;
+            label.style.background = 'var(--status-normal)';
+        } else if (APP_CONFIG.MODE === 'REAL') {
+            // CORREÇÃO: sem arquivos, mas em MODE='REAL', o AnalysisService
+            // ainda tenta o pipeline real via busca automática STAC (usando
+            // area.geojson) — não cai em demo. O label antigo ("MODO DEMO")
+            // era enganoso aqui; só é de fato demo se MODE='DEMO'.
+            label.textContent = 'BUSCA AUTOMÁTICA (STAC)';
+            label.style.background = 'var(--status-normal)';
         } else {
-            if (label) {
-                label.textContent = 'MODO DEMO';
-                label.style.background = 'var(--accent-yellow)';
-            }
+            label.textContent = 'MODO DEMO';
+            label.style.background = 'var(--accent-yellow)';
         }
     }
 
@@ -1085,10 +1137,16 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ Chart:', typeof Chart !== 'undefined' ? 'OK' : '❌ FALTA');
     
     const app = new App();
-    app.init();
-    
-    // Expor globalmente para debugging
+
+    // CORREÇÃO CRÍTICA: expor window.app ANTES de chamar app.init().
+    // Vários serviços internos (em especial AnalysisService.init()) leem
+    // window.app?.copernicusService, window.app?.rasterProcessor,
+    // window.app?.areaService etc. durante a própria inicialização.
+    // Se window.app só existir depois de init(), essas referências ficam
+    // permanentemente undefined/null e o pipeline REAL nunca é usado.
     window.app = app;
+
+    app.init();
     
     console.log('✅ App exposto globalmente como window.app');
 });
