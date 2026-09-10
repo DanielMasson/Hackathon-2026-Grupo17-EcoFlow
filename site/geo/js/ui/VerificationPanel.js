@@ -1,14 +1,8 @@
 /**
  * VERIFICATION PANEL UI
- * Aba dedicada a revisar alertas ativos comparando NDVI x satélite real.
- *
- * CORREÇÃO: a listagem de cards agora usa apenas o ImageService (gerado a
- * partir dos dados em localStorage), sem consultar o IndexedDB
- * (resultImageStore) automaticamente. Isso evita que miniaturas de análises
- * reais feitas em sessões/deploys anteriores apareçam aqui só porque o
- * alerta com o mesmo areaId ainda existe. O comparador com satélite
- * real/NDVI (IndexedDB) continua disponível, mas só quando o usuário clica
- * em "Comparar" — ação explícita.
+ * Aba dedicada a revisar alertas ativos comparando NDVI x satélite real,
+ * usando os snapshots salvos localmente (ResultImageStore) — sem precisar
+ * reprocessar nada.
  */
 
 class VerificationPanel {
@@ -26,7 +20,7 @@ class VerificationPanel {
      * Renderiza a lista de alertas ativos com opção de verificação visual.
      * @param {Array} alerts
      */
-    render(alerts) {
+    async render(alerts) {
         const container = document.getElementById('verificationGrid');
         if (!container) return;
 
@@ -43,19 +37,24 @@ class VerificationPanel {
             return;
         }
 
-        const cards = active.map(alert => this._buildCard(alert));
+        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;">Carregando snapshots salvos...</div>`;
+
+        const cards = await Promise.all(active.map(alert => this._buildCard(alert)));
         container.innerHTML = cards.join('');
         this._bindEvents();
     }
 
     /**
      * @param {Object} alert
-     * @returns {string}
+     * @returns {Promise<string>}
      * @private
      */
-    _buildCard(alert) {
-        const demoImages = window.app?.imageService ? window.app.imageService.getImages(alert.areaId) : null;
-        const thumb = demoImages?.after?.dataUrl || null;
+    async _buildCard(alert) {
+        const snapshot = window.resultImageStore
+            ? await window.resultImageStore.getLatestForArea(alert.areaId)
+            : null;
+
+        const thumb = snapshot?.images?.trueColorAfter || snapshot?.images?.ndviAfter || null;
 
         const severityColors = {
             'critica': 'var(--status-critical)', 'alta': 'var(--status-high)',

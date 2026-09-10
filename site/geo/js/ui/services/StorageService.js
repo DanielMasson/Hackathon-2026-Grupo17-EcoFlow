@@ -40,9 +40,6 @@ _loadDemoData() {
         this.saveAreas(DEMO_DATA.areas || []);
         this.saveAlerts(DEMO_DATA.alerts || []);
         this.saveHistory(DEMO_DATA.history || []);
-        if (window.resultImageStore) {
-            window.resultImageStore.clearAll().catch(() => {});
-        }
         console.log('[StorageService] Dados de demonstração carregados');
     } else {
         console.warn('[StorageService] DEMO_DATA não encontrado');
@@ -288,9 +285,6 @@ _loadDemoData() {
         localStorage.removeItem(this.alertsKey);
         localStorage.removeItem(this.historyKey);
         this._initialized = false;
-        if (window.resultImageStore) {
-            window.resultImageStore.clearAll().catch(() => {});
-        }
         console.log('[StorageService] Todos os dados removidos');
     }
 

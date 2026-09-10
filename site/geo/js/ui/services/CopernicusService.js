@@ -343,22 +343,10 @@ class CopernicusService {
 
             // Clampa dentro dos limites da imagem e adiciona uma pequena margem
             const margin = 5;
-            let clampedLeft = Math.max(0, left - margin);
-            let clampedTop = Math.max(0, top - margin);
-            let clampedRight = Math.min(fullWidth, right + margin);
-            let clampedBottom = Math.min(fullHeight, bottom + margin);
-
-            const MIN_SIZE = 32;
-            if (clampedRight - clampedLeft < MIN_SIZE) {
-                const center = (clampedLeft + clampedRight) / 2;
-                clampedLeft = Math.max(0, Math.round(center - MIN_SIZE / 2));
-                clampedRight = Math.min(fullWidth, clampedLeft + MIN_SIZE);
-            }
-            if (clampedBottom - clampedTop < MIN_SIZE) {
-                const center = (clampedTop + clampedBottom) / 2;
-                clampedTop = Math.max(0, Math.round(center - MIN_SIZE / 2));
-                clampedBottom = Math.min(fullHeight, clampedTop + MIN_SIZE);
-            }
+            const clampedLeft = Math.max(0, left - margin);
+            const clampedTop = Math.max(0, top - margin);
+            const clampedRight = Math.min(fullWidth, right + margin);
+            const clampedBottom = Math.min(fullHeight, bottom + margin);
 
             if (clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
                 console.warn('[CopernicusService] Janela de AOI calculada é inválida/fora da cena, baixando cena completa.');
@@ -490,7 +478,7 @@ class CopernicusService {
             const width = pixelWindow ? pixelWindow[2] - pixelWindow[0] : image.getWidth();
             const height = pixelWindow ? pixelWindow[3] - pixelWindow[1] : image.getHeight();
 
-            return this._rgbRastersToDataURL(rasters, width, height, 400, 400);
+            return this._rgbRastersToDataURL(rasters, width, height);
         } catch (e) {
             console.warn('[CopernicusService] Não foi possível carregar imagem true-color:', e);
             return null;
@@ -501,12 +489,12 @@ class CopernicusService {
      * Converte rasters RGB (TypedArrays, um por banda) em dataURL PNG via canvas.
      * @private
      */
-    _rgbRastersToDataURL(rasters, width, height, targetWidth = 400, targetHeight = 400) {
-        const srcCanvas = document.createElement('canvas');
-        srcCanvas.width = width;
-        srcCanvas.height = height;
-        const srcCtx = srcCanvas.getContext('2d');
-        const imgData = srcCtx.createImageData(width, height);
+    _rgbRastersToDataURL(rasters, width, height) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(width, height);
 
         const r = rasters[0], g = rasters[1] || rasters[0], b = rasters[2] || rasters[0];
         for (let i = 0; i < width * height; i++) {
@@ -515,24 +503,8 @@ class CopernicusService {
             imgData.data[i * 4 + 2] = b[i] || 0;
             imgData.data[i * 4 + 3] = 255;
         }
-        srcCtx.putImageData(imgData, 0, 0);
-
-        const dstCanvas = document.createElement('canvas');
-        dstCanvas.width = targetWidth;
-        dstCanvas.height = targetHeight;
-        const dstCtx = dstCanvas.getContext('2d');
-
-        const scale = Math.min(targetWidth / width, targetHeight / height);
-        const drawW = width * scale;
-        const drawH = height * scale;
-        const offsetX = (targetWidth - drawW) / 2;
-        const offsetY = (targetHeight - drawH) / 2;
-
-        dstCtx.fillStyle = '#0d1712';
-        dstCtx.fillRect(0, 0, targetWidth, targetHeight);
-        dstCtx.drawImage(srcCanvas, 0, 0, width, height, offsetX, offsetY, drawW, drawH);
-
-        return dstCanvas.toDataURL('image/png');
+        ctx.putImageData(imgData, 0, 0);
+        return canvas.toDataURL('image/png');
     }
     /**
      * Carrega par de bandas B04+B08 de um item STAC.

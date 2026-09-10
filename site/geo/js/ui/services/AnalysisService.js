@@ -340,25 +340,6 @@ class AnalysisService {
         const classif = pipelineResult.classification;
         const detection = pipelineResult.detection;
 
-        // Overlay transparente com as regiões irregulares detectadas, para
-        // sobrepor na imagem de satélite real (toggle na UI).
-        let changeMaskOverlayImage = null;
-        try {
-            const severityColorMap = {
-                critica: [255, 59, 59],
-                alta:    [255, 140, 0],
-                media:   [200, 230, 0],
-                normal:  [0, 230, 118]
-            };
-            const overlayColor = severityColorMap[classif.severity] || [255, 59, 59];
-            changeMaskOverlayImage = rasterProcessor.renderMaskOverlayPNG(
-                detection.mask, before.width, before.height,
-                { canvasWidth: before.width, canvasHeight: before.height, color: overlayColor }
-            );
-        } catch (e) {
-            console.warn('[AnalysisService] Erro ao renderizar overlay de irregularidades:', e);
-        }
-
         // Pega a maior região detectada. CORREÇÃO: detection.regions agora
         // já vem ordenada por área decrescente (ver RasterProcessor.detectChanges),
         // então regions[0] é de fato a maior alteração, não a primeira
@@ -410,7 +391,8 @@ class AnalysisService {
                 ndviBefore: ndviBeforeImage,
                 ndviAfter: ndviAfterImage,
                 changeOverlay: changeOverlayImage,
-                changeMaskOverlay: changeMaskOverlayImage,
+                // NOVO: imagem de satélite real (true color), quando disponível
+                // (só existe na busca automática via STAC, não em upload manual).
                 trueColorBefore: this._lastTrueColor?.before || null,
                 trueColorAfter: this._lastTrueColor?.after || null
             },
@@ -656,42 +638,16 @@ class AnalysisService {
                         <div style="font-size:13px;font-weight:600;">🛰️ Verificação com Imagem Real</div>
                         <span style="font-size:11px;color:var(--text-muted);">Use para descartar falsos positivos</span>
                     </div>
-
-                    ${result.images?.changeMaskOverlay ? `
-                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);margin-bottom:12px;cursor:pointer;user-select:none;">
-                        <input type="checkbox" id="toggleIrreg_${area.id}" checked
-                               onchange="document.querySelectorAll('.irreg-overlay-${area.id}').forEach(el => el.style.opacity = this.checked ? '1' : '0');"
-                               style="accent-color:var(--accent-orange);width:14px;height:14px;">
-                        🔴 Destacar áreas com irregularidades detectadas
-                        ${result.pipeline?.stats?.numRegions ? `<span style="color:var(--text-muted);">(${result.pipeline.stats.numRegions} região(ões))</span>` : ''}
-                    </label>
-                    ` : ''}
-
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                         <div>
                             <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Satélite — Antes</div>
-                            <div style="position:relative;border-radius:6px;overflow:hidden;">
-                                <img src="${result.images.trueColorBefore}" style="width:100%;display:block;" alt="Satélite Antes">
-                                ${result.images?.changeMaskOverlay ? `
-                                <img src="${result.images.changeMaskOverlay}" class="irreg-overlay-${area.id}"
-                                     style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:1;transition:opacity 0.2s ease;"
-                                     alt="Áreas irregulares">
-                                ` : ''}
-                            </div>
+                            <img src="${result.images.trueColorBefore}" style="width:100%;border-radius:6px;" alt="Satélite Antes">
                         </div>
                         <div>
                             <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Satélite — Depois</div>
-                            <div style="position:relative;border-radius:6px;overflow:hidden;">
-                                <img src="${result.images.trueColorAfter}" style="width:100%;display:block;" alt="Satélite Depois">
-                                ${result.images?.changeMaskOverlay ? `
-                                <img src="${result.images.changeMaskOverlay}" class="irreg-overlay-${area.id}"
-                                     style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;opacity:1;transition:opacity 0.2s ease;"
-                                     alt="Áreas irregulares">
-                                ` : ''}
-                            </div>
+                            <img src="${result.images.trueColorAfter}" style="width:100%;border-radius:6px;" alt="Satélite Depois">
                         </div>
                     </div>
-
                     <div style="margin-top:12px;text-align:center;">
                         <button onclick="window.app?.imageComparator?.open('${area.id}')" class="btn-secondary" style="font-size:13px;">
                             🔍 Abrir Comparador Deslizante
